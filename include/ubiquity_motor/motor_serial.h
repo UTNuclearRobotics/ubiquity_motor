@@ -31,7 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef MOTORSERIAL_H
 #define MOTORSERIAL_H
 
-#include <ros/ros.h>
 #include <serial/serial.h>
 #include <ubiquity_motor/motor_message.h>
 #include <ubiquity_motor/shared_queue.h>

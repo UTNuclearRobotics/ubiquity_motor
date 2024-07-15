@@ -31,24 +31,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef MOTORHARDWARE_H
 #define MOTORHARDWARE_H
 
-#include "hardware_interface/joint_command_interface.h"
-#include "hardware_interface/joint_state_interface.h"
-#include "hardware_interface/robot_hw.h"
-#include "ros/ros.h"
-#include "sensor_msgs/JointState.h"
+#include "hardware_interface/system_interface.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
 
-#include "std_msgs/Int32.h"
-#include "std_msgs/UInt32.h"
-#include "std_msgs/Float32.h"
-#include "std_msgs/Bool.h"
-#include "std_msgs/String.h"
-#include "sensor_msgs/BatteryState.h"
-#include "ubiquity_motor/MotorState.h"
+#include "std_msgs/msg/int32.hpp"
+#include "std_msgs/msg/u_int32.hpp"
+#include "std_msgs/msg/float32.hpp"
+#include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
+#include "sensor_msgs/msg/battery_state.hpp"
+#include "ubiquity_motor/msg/motor_state.hpp"
 
-#include <diagnostic_updater/update_functions.h>
-#include <diagnostic_updater/diagnostic_updater.h>
+#include <diagnostic_updater/update_functions.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
 
-#include <ubiquity_motor/motor_parameters.h>
+#include <motor_parameters.hpp>
 #include <ubiquity_motor/motor_serial.h>
 
 #include <gtest/gtest_prod.h>
@@ -130,10 +127,10 @@ struct MotorDiagnostics {
     void firmware_date_status(diagnostic_updater::DiagnosticStatusWrapper &stat);
 };
 
-class MotorHardware : public hardware_interface::RobotHW {
+class MotorHardware : public hardware_interface::SystemInterface {
 public:
-    MotorHardware(ros::NodeHandle nh, NodeParams node_params, CommsParams serial_params,
-                  FirmwareParams firmware_params);
+    MotorHardware(rclcpp::Node::SharedPtr nh, ubiquity_motor::Params::CommsParams serial_params,
+                  ubiquity_motor::Params::FirmwareParams firmware_params);
     virtual ~MotorHardware();
     void closePort();
     bool openPort();
@@ -146,7 +143,7 @@ public:
     int  areWheelSpeedsLower(double wheelSpeedRadPerSec);
     void requestFirmwareVersion();
     void requestFirmwareDate();
-    void setParams(FirmwareParams firmware_params);
+    void setParams(ubiquity_motor::Params::FirmwareParams firmware_params);
     void sendParams();
     void forcePidParamUpdates();
     float getBatteryVoltage(void);
@@ -202,11 +199,11 @@ private:
     int16_t calculateSpeedFromRadians(double radians);
     double calculateRadiansFromTicks(int16_t ticks);
 
-    hardware_interface::JointStateInterface joint_state_interface_;
-    hardware_interface::VelocityJointInterface velocity_joint_interface_;
+    hardware_interface::StateInterface joint_state_interface_;
+    hardware_interface::CommandInterface velocity_joint_interface_;
 
-    FirmwareParams fw_params;
-    FirmwareParams prev_fw_params;
+    ubiquity_motor::Params::FirmwareParams fw_params;
+    ubiquity_motor::Params::FirmwareParams prev_fw_params;
 
     int32_t deadman_timer;
 
@@ -237,19 +234,19 @@ private:
         Right = 1
     };
 
-    ros::Publisher leftError;
-    ros::Publisher rightError;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr leftError;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rightError;
 
-    ros::Publisher leftCurrent;
-    ros::Publisher rightCurrent;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr leftCurrent;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rightCurrent;
 
-    ros::Publisher leftTickInterval;
-    ros::Publisher rightTickInterval;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr leftTickInterval;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rightTickInterval;
 
-    ros::Publisher firmware_state;
-    ros::Publisher battery_state;
-    ros::Publisher motor_power_active;
-    ros::Publisher motor_state;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr firmware_state;
+    rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motor_power_active;
+    rclcpp::Publisher<ubiquity_motor::msg::MotorState>::SharedPtr motor_state;
 
     MotorSerial* motor_serial_;
 
