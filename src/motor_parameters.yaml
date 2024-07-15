@@ -1,0 +1,227 @@
+ubiquity_motor:
+
+  # Firmware parameters
+  firmware_params:
+    pid:
+      proportional: {
+        type: int,
+        description: PID proportional gain,
+        default_value: 5000,
+        validation: {
+          clamp<>: [0, 100000]
+        }
+      }
+
+      integral: {
+        type: int,
+        description: PID integral gain,
+        default_value: 7,
+        validation: {
+          clamp<>: [0, 10000]
+        }
+      }
+
+      derivative: {
+        type: int,
+        description: PID derivative gain,
+        default_value: -30,
+        validation: {
+          clamp<>: [-100000, 100000]
+        }
+      }
+
+      velocity: {
+        type: double,
+        description: PID velocity gain,
+        default_value: 0,
+        validation: {
+          clamp<>: [-10000000, 10000000]
+        }
+      }
+
+      denominator: {
+        type: int,
+        description: PID denominator,
+        default_value: 1000,
+        validation: {
+          clamp<>: [0, 100000]
+        }
+      }
+
+      moving_buffer_size: {
+        type: int,
+        description: PID moving buffer size,
+        default_value: 100,
+        validation: {
+          clamp<>: [0, 200]
+        }
+      }
+
+      control: {
+        type: int,
+        description: PID control word
+      }
+
+    controller_board_version: {
+      type: int,
+      description: Version number for the MCB,
+      default_value: 51
+    }
+
+    estop_detection: {
+      type: bool,
+      description: Setup the controller board to have estop button state detection feature enabled or not,
+      default_value: true
+    }
+
+    estop_pid_threshold: {
+      type: int,
+      description: Setup the controller board threshold to put into force estop protection on boards prior to rev 5.0 with hardware support,
+      default_value: 1500
+    }
+
+    max_speed_fwd: {
+      type: int,
+      description: Setup the controller board maximum settable motor forward speed,
+      default_value: 80,
+      validation: {
+        gt_eq<>: 0
+      }
+    }
+
+    max_speed_rev: {
+      type: int,
+      description: Setup the controller board maximum settable motor reverse speed,
+      default_value: -80,
+      validation: {
+        gt_eq<>: 0
+      }
+    }
+
+    max_pwm: {
+      type: int,
+      description: Setup the controller board maximum PWM level allowed for a motor,
+      default_value: 250,
+      validation: {
+        clamp<>: [0, 5000]
+      }
+    }
+
+    deadman_timer: {
+      type: int,
+      description: Deadman timer timeout,
+      default_value: 2400000
+    }
+
+    deadzone_enable: {
+      type: bool,
+      description: Enable deadzone,
+      default_value: false
+    }
+
+    hw_options: {
+      type: int,
+      description: Bit encoded hardware options,
+      default_value: 0x0000,
+      read_only: true
+    }
+
+    option_switch: {
+      type: int,
+      description: Option switch,
+      default_value: 0,
+      read_only: true
+    }
+
+    system_events: {
+      type: int,
+      description: System events,
+      default_value: 0,
+      read_only: true
+    }
+
+  battery_voltage:
+    multiplier: {
+      type: double, 
+      description: Battery voltage multiplier for ACD readings,
+      default_value: 0.05127
+    }
+
+    offset: {
+      type: double,
+      description: Battery voltage offset,
+      default_value: 0.0
+    }
+
+    low_level: {
+      type: double,
+      description: Battery voltage low-level,
+      default_value: 23.2
+    }
+
+    critical: {
+      type: double,
+      description: Battery voltage critical low-level,
+      default_value: 22.5
+    }
+  
+  # Communication parameters
+  comms_params:
+    serial_port: {
+      type: string,
+      description: Communication serial port,
+      default_value: "/dev/ttyS0"
+    }
+
+    baud_rate: {
+      type: int,
+      description: Communication baud rate,
+      default_value: 9600,
+      validation: {
+        gt<>: 0
+      }
+    }
+
+  # Node parameters
+  node_params:
+    controller_loop_rate: {
+      type: double,
+      description: Controller loop rate,
+      default_value: 10.0
+    }
+
+    wheel_type: {
+      type: string,
+      description: Robot wheel type,
+      default_value: "firmware_default"
+    }
+
+    wheel_direction: {
+      type: string,
+      description: Robot wheel direction,
+      default_value: "firmware_default"
+    }
+
+    wheel_gear_ratio: {
+      type: double,
+      description: Robot wheel gear ratio,
+      default_value: 4.294
+    }
+
+    drive_type: {
+      type: string,
+      description: Robot drive type,
+      default_value: "firmware_default"
+    }
+
+    mcb_control_enabled: {
+      type: bool,
+      description: Whether the MCB serial communication is enabled (used for diagnostics),
+      default_value: true
+    }
+
+    mcb_speed_enabled: {
+      type: bool,
+      description: Whether the MCB speed control is enabled,
+      default_value: true
+    }
