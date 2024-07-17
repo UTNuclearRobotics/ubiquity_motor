@@ -32,10 +32,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MOTORMESSAGE_H
 
 #include <stdint.h>
-#include <boost/array.hpp>
+#include <array>
 #include <vector>
 
-typedef boost::array<uint8_t, 8> RawMotorMessage;
+typedef std::array<uint8_t, 8> RawMotorMessage;
 
 // To support enhanced firmware we identify the fw version for new registers 
 // The idea is we do not want to make firmware message requests till a feature is supported
@@ -273,7 +273,7 @@ private:
     uint8_t register_addr;
 
     // 4 bytes of data, numbers should be in big endian format
-    boost::array<uint8_t, 4> data;
+    std::array<uint8_t, 4> data;
 
     const static uint8_t protocol_version =
         0x03;  // Hard coded for now, should be parameterized
