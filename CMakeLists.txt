@@ -118,7 +118,7 @@ install(TARGETS ur_serial
 ## Declare a cpp library
 add_library(${PROJECT_NAME}
   src/motor_message.cc
-  # src/motor_serial.cc
+  src/motor_serial.cc
   src/motor_hardware.cc
 )
 ament_target_dependencies(${PROJECT_NAME}
