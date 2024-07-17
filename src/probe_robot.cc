@@ -28,6 +28,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 **/
 
+#include <algorithm>
 #include <serial/serial.h>
 #include <ubiquity_motor/motor_message.h>
 
@@ -43,16 +44,16 @@ struct Options {
 
 bool find_switch(const std::vector<std::string> &args, const std::string &short_sw,
                  const std::string &long_sw) {
-    bool has_short = (std::find(args.cbegin(), args.cend(), short_sw)) != args.cend();
-    bool has_long = (std::find(args.cbegin(), args.cend(), long_sw)) != args.cend();
+    bool has_short = (std::find(std::begin(args), std::end(args), short_sw)) != std::end(args);
+    bool has_long = (std::find(std::begin(args), std::end(args), long_sw)) != std::end(args);
 
     return (has_long || has_short);
 }
 
 std::string get_option(const std::vector<std::string> &args, const std::string &option,
                        const std::string &default_val) {
-    auto opt = std::find(args.cbegin(), args.cend(), option);
-    if (opt != args.cend() && std::next(opt) != args.cend()) {
+    auto opt = std::find(std::begin(args), std::end(args), option);
+    if (opt != std::end(args) && std::next(opt) != std::end(args)) {
         return *(++opt);
     } else {
         return default_val;
@@ -61,8 +62,8 @@ std::string get_option(const std::vector<std::string> &args, const std::string &
 
 int get_option(const std::vector<std::string> &args, const std::string &option,
                        const int default_val) {
-    auto opt = std::find(args.cbegin(), args.cend(), option);
-    if (opt != args.cend() && std::next(opt) != args.cend()) {
+    auto opt = std::find(std::begin(args), std::end(args), option);
+    if (opt != std::end(args) && std::next(opt) != std::end(args)) {
         return std::stoi(*(++opt));
     } else {
         return default_val;
@@ -115,7 +116,7 @@ MotorMessage readRegister(MotorMessage::Registers reg, serial::Serial &robot) {
     req.setData(0);
 
     RawMotorMessage out = req.serialize();
-    robot.write(out.c_array(), out.size());
+    robot.write(out.data(), out.size());
 
     robot.flush();
 
@@ -128,11 +129,11 @@ MotorMessage readRegister(MotorMessage::Registers reg, serial::Serial &robot) {
         if (robot.waitReadable()) {
             RawMotorMessage innew = {0, 0, 0, 0, 0, 0, 0, 0};
 
-            robot.read(innew.c_array(), 1);
+            robot.read(innew.data(), 1);
             if (innew[0] != MotorMessage::delimeter) continue;
 
             robot.waitByteTimes(innew.size() - 1);
-            robot.read(&innew.c_array()[1], 7);
+            robot.read(&innew.data()[1], 7);
 
             MotorMessage rsp;
             if (!rsp.deserialize(innew)) {
