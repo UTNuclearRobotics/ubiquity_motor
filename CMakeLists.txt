@@ -30,17 +30,23 @@ generate_parameter_library(
   src/motor_parameters.yaml
 )
 
+include_directories(
+  include
+)
+
 #######################################
 ## Declare ROS messages and services ##
 #######################################
 
 rosidl_generate_interfaces(
-  ${PROJECT_NAME}
+  ${PROJECT_NAME}_interfaces
     "msg/Leds.msg"
     "msg/MotorState.msg"
   DEPENDENCIES
     std_msgs
 )
+ament_export_dependencies(rosidl_default_runtime)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME}_interfaces rosidl_typesupport_cpp)
 
 ###########
 ## Build ##
@@ -109,10 +115,19 @@ install(TARGETS ur_serial
 ## Your package locations should be listed before other locations
 ### include_directories(include ${catkin_INCLUDE_DIRS} ${Boost_INCLUDE_DIRS})
 ### 
-### ## Declare a cpp library
-### add_library(ubiquity_motor
-###   src/motor_message.cc src/motor_serial.cc src/motor_hardware.cc
-### )
+## Declare a cpp library
+add_library(${PROJECT_NAME}
+  # src/motor_message.cc
+  # src/motor_serial.cc
+  src/motor_hardware.cc
+)
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  std_msgs
+  sensor_msgs
+  diagnostic_updater
+)
+target_link_libraries(${PROJECT_NAME} motor_parameters "${cpp_typesupport_target}")
 ### 
 ### # enable message generation for ubiquity_motor
 ### add_dependencies(ubiquity_motor ${PROJECT_NAME}_generate_messages_cpp)

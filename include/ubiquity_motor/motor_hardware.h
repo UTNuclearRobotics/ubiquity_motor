@@ -53,6 +53,20 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Mininum hardware versions required for various features
 #define MIN_HW_OPTION_SWITCH 50
 
+// The gear ratio defaults for wheels shipped with Magni
+#define WHEEL_GEAR_RATIO_1  ((double)(4.294))   // Default original motor gear ratio for Magni
+#define WHEEL_GEAR_RATIO_2  ((double)(5.170))   // 2nd version standard Magni wheels gear ratio
+
+// For experimental purposes users will see that the wheel encoders are three phases
+// of very neaar 43 pulses per revolution or about 43*3 edges so we see very about 129 ticks per rev
+// This leads to 129/(2*Pi)  or about 20.53 ticks per radian experimentally.
+// 60 ticks per revolution of the motor (pre gearbox) and a gear ratio of 4.2941176:1 for 1st rev Magni wheels
+// An unexplained constant from the past I leave here till explained is: 17.2328767
+
+#define TICKS_PER_RAD_FROM_GEAR_RATIO   ((double)(4.774556)*(double)(2.0))  // Used to generate ticks per radian 
+#define TICKS_PER_RADIAN_DEFAULT        41.004  // For runtime use  getWheelGearRatio() * TICKS_PER_RAD_FROM_GEAR_RATIO    
+#define WHEEL_GEAR_RATIO_DEFAULT        WHEEL_GEAR_RATIO_1
+
 struct MotorDiagnostics {
     MotorDiagnostics()
         : odom_update_status(
@@ -129,9 +143,22 @@ struct MotorDiagnostics {
 
 class MotorHardware : public hardware_interface::SystemInterface {
 public:
-    MotorHardware(rclcpp::Node::SharedPtr nh, ubiquity_motor::Params::CommsParams serial_params,
-                  ubiquity_motor::Params::FirmwareParams firmware_params);
-    virtual ~MotorHardware();
+using CommsParams = ubiquity_motor::Params::CommsParams;
+using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
+
+    MotorHardware();
+    
+    // System Interface interface
+    CallbackReturn on_init(const hardware_interface::HardwareInfo & info) override;
+    CallbackReturn on_configure(const rclcpp_lifecycle::State & previous_state) override; 
+    CallbackReturn on_cleanup(const rclcpp_lifecycle::State & previous_state) override; 
+    CallbackReturn on_activate(const rclcpp_lifecycle::State & previous_state) override;
+    CallbackReturn on_deactivate(const rclcpp_lifecycle::State & previous_state) override;
+    std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
+    std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
+    hardware_interface::return_type read(const rclcpp::Time & time, const rclcpp::Duration & period) override;
+    hardware_interface::return_type write(const rclcpp::Time & time, const rclcpp::Duration & period) override;
+
     void closePort();
     bool openPort();
     void clearCommands();
@@ -174,9 +201,9 @@ public:
     void getWheelJointPositions(double &leftWheelPosition, double &rightWheelPosition);
     void setWheelJointVelocities(double leftWheelVelocity, double rightWheelVelocity);
     void publishMotorState(void);
-    int firmware_version;
-    int firmware_date;
-    int firmware_options;
+    int firmware_version{0};
+    int firmware_date{0};
+    int firmware_options{0};
     int num_fw_params;  // This is used for sendParams as modulo count
     int hardware_version;
     int estop_pid_threshold;
@@ -187,11 +214,9 @@ public:
     int deadman_enable;
     int system_events;
     int wheel_type;
-    double wheel_gear_ratio;
+    double wheel_gear_ratio{WHEEL_GEAR_RATIO_DEFAULT};
     int drive_type;
 
-
-    diagnostic_updater::Updater diag_updater;
 private:
     void _addOdometryRequest(std::vector<MotorMessage>& commands) const;
     void _addVelocityRequest(std::vector<MotorMessage>& commands) const;
@@ -199,19 +224,25 @@ private:
     int16_t calculateSpeedFromRadians(double radians);
     double calculateRadiansFromTicks(int16_t ticks);
 
-    hardware_interface::StateInterface joint_state_interface_;
-    hardware_interface::CommandInterface velocity_joint_interface_;
+    std::vector<hardware_interface::StateInterface> joint_state_interface_;
+    std::vector<hardware_interface::CommandInterface> velocity_joint_interface_;
 
+    rclcpp::Node::SharedPtr nh_;
+
+    ubiquity_motor::ParamListener params_listener_;
     ubiquity_motor::Params::FirmwareParams fw_params;
     ubiquity_motor::Params::FirmwareParams prev_fw_params;
 
+    public: diagnostic_updater::Updater diag_updater;
+    private:
+
     int32_t deadman_timer;
 
-    double  ticks_per_radian;       // Odom ticks per radian for wheel encoders in use
+    double  ticks_per_radian{TICKS_PER_RADIAN_DEFAULT}; // Odom ticks per radian for wheel encoders in use
 
     int32_t sendPid_count;
 
-    bool estop_motor_power_off;    // Motor power inactive, most likely from ESTOP switch
+    bool estop_motor_power_off{false};    // Motor power inactive, most likely from ESTOP switch
 
     struct Joint {
         double position;
@@ -220,7 +251,8 @@ private:
         double velocity_command;
 
         Joint() : position(0), velocity(0), effort(0), velocity_command(0) {}
-    } joints_[2];
+    };
+    std::array<Joint, 2> joints_;
 
     // MessageTypes enum for refering to motor or wheel number
     enum MotorOrWheelNumber {
@@ -248,7 +280,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motor_power_active;
     rclcpp::Publisher<ubiquity_motor::msg::MotorState>::SharedPtr motor_state;
 
-    MotorSerial* motor_serial_;
+    std::unique_ptr<MotorSerial> motor_serial_;
 
     MotorDiagnostics motor_diag_;
 
