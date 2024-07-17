@@ -30,7 +30,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <ubiquity_motor/motor_message.h>
 // #include <ubiquity_motor/motor_message_registers.h>
-#include <ros/console.h>
 #include <numeric>
 
 uint8_t const MotorMessage::valid_types[] = {TYPE_READ, TYPE_WRITE,
@@ -181,7 +180,7 @@ MotorMessage::ErrorCodes MotorMessage::deserialize(const RawMotorMessage &serial
 int MotorMessage::verifyType(uint8_t t) {
     // Return 1 good
     // Return 0 for bad
-    for (size_t i = 0; i < sizeof(valid_types) / sizeof(valid_types[0]); ++i) {
+    for (std::size_t i = 0; i < sizeof(valid_types) / sizeof(valid_types[0]); ++i) {
         if (t == valid_types[i]) return 1;
     }
     return 0;
@@ -190,7 +189,7 @@ int MotorMessage::verifyType(uint8_t t) {
 int MotorMessage::verifyRegister(uint8_t r) {
     // Return 1 good
     // Return 0 for bad
-    for (size_t i = 0; i < sizeof(valid_registers) / sizeof(valid_registers[0]);
+    for (std::size_t i = 0; i < sizeof(valid_registers) / sizeof(valid_registers[0]);
          ++i) {
         if (r == valid_registers[i]) return 1;
     }
