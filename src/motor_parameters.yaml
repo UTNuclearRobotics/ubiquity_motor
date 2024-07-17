@@ -8,7 +8,7 @@ ubiquity_motor:
         description: PID proportional gain,
         default_value: 5000,
         validation: {
-          clamp<>: [0, 100000]
+          bounds<>: [0, 100000]
         }
       }
 
@@ -17,7 +17,7 @@ ubiquity_motor:
         description: PID integral gain,
         default_value: 7,
         validation: {
-          clamp<>: [0, 10000]
+          bounds<>: [0, 10000]
         }
       }
 
@@ -26,7 +26,7 @@ ubiquity_motor:
         description: PID derivative gain,
         default_value: -30,
         validation: {
-          clamp<>: [-100000, 100000]
+          bounds<>: [-100000, 100000]
         }
       }
 
@@ -35,7 +35,7 @@ ubiquity_motor:
         description: PID velocity gain,
         default_value: 0,
         validation: {
-          clamp<>: [-10000000, 10000000]
+          bounds<>: [-10000000, 10000000]
         }
       }
 
@@ -44,7 +44,7 @@ ubiquity_motor:
         description: PID denominator,
         default_value: 1000,
         validation: {
-          clamp<>: [0, 100000]
+          bounds<>: [0, 100000]
         }
       }
 
@@ -53,7 +53,7 @@ ubiquity_motor:
         description: PID moving buffer size,
         default_value: 100,
         validation: {
-          clamp<>: [0, 200]
+          bounds<>: [0, 200]
         }
       }
 
@@ -103,7 +103,7 @@ ubiquity_motor:
       description: Setup the controller board maximum PWM level allowed for a motor,
       default_value: 250,
       validation: {
-        clamp<>: [0, 5000]
+        bounds<>: [0, 5000]
       }
     }
 
@@ -140,30 +140,30 @@ ubiquity_motor:
       read_only: true
     }
 
-  battery_voltage:
-    multiplier: {
-      type: double, 
-      description: Battery voltage multiplier for ACD readings,
-      default_value: 0.05127
-    }
+    battery_voltage:
+      multiplier: {
+        type: double, 
+        description: Battery voltage multiplier for ACD readings,
+        default_value: 0.05127
+      }
 
-    offset: {
-      type: double,
-      description: Battery voltage offset,
-      default_value: 0.0
-    }
+      offset: {
+        type: double,
+        description: Battery voltage offset,
+        default_value: 0.0
+      }
 
-    low_level: {
-      type: double,
-      description: Battery voltage low-level,
-      default_value: 23.2
-    }
+      low_level: {
+        type: double,
+        description: Battery voltage low-level,
+        default_value: 23.2
+      }
 
-    critical: {
-      type: double,
-      description: Battery voltage critical low-level,
-      default_value: 22.5
-    }
+      critical: {
+        type: double,
+        description: Battery voltage critical low-level,
+        default_value: 22.5
+      }
   
   # Communication parameters
   comms_params:
