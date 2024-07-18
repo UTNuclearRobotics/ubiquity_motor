@@ -239,10 +239,16 @@ MotorHardware::MotorHardware() :
 
     rclcpp::QoS latching_qos(1);
     latching_qos.transient_local();
-    leftError = nh_->create_publisher<std_msgs::msg::Int32>("left_error", 1);
-    rightError = nh_->create_publisher<std_msgs::msg::Int32>("right_error", 1);
-    leftTickInterval  = nh_->create_publisher<std_msgs::msg::Int32>("left_tick_interval", 1);
-    rightTickInterval = nh_->create_publisher<std_msgs::msg::Int32>("right_tick_interval", 1);
+    left_error_pub_ = nh_->create_publisher<std_msgs::msg::Int32>("left_error", 1);
+    right_error_pub_ = nh_->create_publisher<std_msgs::msg::Int32>("right_error", 1);
+    left_tick_interval_pub_  = nh_->create_publisher<std_msgs::msg::Int32>("left_tick_interval", 1);
+    right_tick_interval_pub_ = nh_->create_publisher<std_msgs::msg::Int32>("right_tick_interval", 1);
+    left_current_pub_ = nh_->create_publisher<std_msgs::msg::Float32>("left_current", 1);
+    right_current_pub_ = nh_->create_publisher<std_msgs::msg::Float32>("right_current", 1);
+    firmware_state_pub_ = nh_->create_publisher<std_msgs::msg::String>("firmware_version", latching_qos);
+    battery_state_pub_ = nh_->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 1);
+    motor_power_active_pub_ = nh_->create_publisher<std_msgs::msg::Bool>("motor_power_active", 1);
+    motor_state_pub_ = nh_->create_publisher<ubiquity_motor::msg::MotorState>("motor_state", 1);
     
     sendPid_count = 0;
     num_fw_params = 8;     // number of params sent if any change
@@ -445,7 +451,7 @@ void MotorHardware::publishMotorState(void) {
     mstateMsg.right_current     = motor_diag_.motorCurrentRight;
     mstateMsg.left_pwm_drive    = motor_diag_.motorPwmDriveLeft;
     mstateMsg.right_pwm_drive   = motor_diag_.motorPwmDriveRight;
-    motor_state->publish(mstateMsg);
+    motor_state_pub_->publish(mstateMsg);
     return;
 }
 
@@ -565,8 +571,8 @@ void MotorHardware::readInputs(uint32_t index) {
 
                     left.data = leftSpeed;
                     right.data = rightSpeed;
-                    leftError->publish(left);
-                    rightError->publish(right);
+                    left_error_pub_->publish(left);
+                    right_error_pub_->publish(right);
                     break;
                 }
 
@@ -685,7 +691,7 @@ void MotorHardware::readInputs(uint32_t index) {
                     bstate.power_supply_status = sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_UNKNOWN;
                     bstate.power_supply_health = sensor_msgs::msg::BatteryState::POWER_SUPPLY_HEALTH_UNKNOWN;
                     bstate.power_supply_technology = sensor_msgs::msg::BatteryState::POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
-                    battery_state->publish(bstate);
+                    battery_state_pub_->publish(bstate);
 
                     motor_diag_.battery_voltage = bstate.voltage;
                     motor_diag_.battery_voltage_low_level = MotorHardware::fw_params.battery_voltage.low_level;
@@ -710,7 +716,7 @@ void MotorHardware::readInputs(uint32_t index) {
 
                     std_msgs::msg::Bool estop_message;
                     estop_message.data = !estop_motor_power_off;
-                    motor_power_active->publish(estop_message);
+                    motor_power_active_pub_->publish(estop_message);
                     break;
                 }
 
@@ -732,8 +738,8 @@ void MotorHardware::readInputs(uint32_t index) {
 
                     // Only publish the tic intervals when wheels are moving
                     if (data > 1) {     // Optionally show the intervals for debug
-                        leftTickInterval->publish(leftInterval);
-                        rightTickInterval->publish(rightInterval);
+                        left_tick_interval_pub_->publish(leftInterval);
+                        right_tick_interval_pub_->publish(rightInterval);
 
                         RCLCPP_DEBUG(nh_->get_logger(), "Tic Ints M1 %d [0x%x]  M2 %d [0x%x]",  
                             leftTickSpacing, leftTickSpacing, rightTickSpacing, rightTickSpacing);
@@ -762,7 +768,7 @@ void MotorHardware::publishFirmwareInfo(){
             fstate.data +=" "+daycode;
         }
 
-        firmware_state->publish(fstate);
+        firmware_state_pub_->publish(fstate);
     }
 }
 

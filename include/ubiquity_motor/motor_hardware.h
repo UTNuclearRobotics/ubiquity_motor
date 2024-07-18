@@ -267,19 +267,19 @@ private:
         Right = 1
     };
 
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr leftError;
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rightError;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr left_error_pub_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr right_error_pub_;
 
-    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr leftCurrent;
-    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr rightCurrent;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr left_current_pub_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr right_current_pub_;
 
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr leftTickInterval;
-    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr rightTickInterval;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr left_tick_interval_pub_;
+    rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr right_tick_interval_pub_;
 
-    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr firmware_state;
-    rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motor_power_active;
-    rclcpp::Publisher<ubiquity_motor::msg::MotorState>::SharedPtr motor_state;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr firmware_state_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motor_power_active_pub_;
+    rclcpp::Publisher<ubiquity_motor::msg::MotorState>::SharedPtr motor_state_pub_;
 
     std::unique_ptr<MotorSerial> motor_serial_;
 
