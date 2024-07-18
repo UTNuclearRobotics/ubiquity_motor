@@ -472,7 +472,7 @@ int main(int argc, char* argv[]) {
             // We null wheel torque if wheel speed has been very low for a long time
             // This would be even better if we only did this when over a certain current is heating the wheel
             if (g_wheel_slip_nulling != 0) {
-                if (robot->areWheelSpeedsLower(WHEEL_SLIP_THRESHOLD) != 0) {
+                if (robot->areWheelSpeedsLower(WHEEL_SLIP_THRESHOLD)) {
                     zeroVelocityTime += jointUpdatePeriod;   // add to time at zero velocity
                     if (zeroVelocityTime > wheelSlipNullingPeriod) {
                         // null wheel error if at zero velocity for the nulling check period

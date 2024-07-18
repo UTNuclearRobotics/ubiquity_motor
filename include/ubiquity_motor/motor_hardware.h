@@ -159,6 +159,7 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     hardware_interface::return_type read(const rclcpp::Time & time, const rclcpp::Duration & period) override;
     hardware_interface::return_type write(const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
+    // Motor hardware interface
     void closePort();
     bool openPort();
     void clearCommands();
@@ -167,7 +168,7 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     void writeSpeedsInRadians(double left_radians, double right_radians);
     void publishFirmwareInfo();
     float calculateBatteryPercentage(float voltage, int cells, const float* type);
-    int  areWheelSpeedsLower(double wheelSpeedRadPerSec);
+    bool areWheelSpeedsLower(double wheelSpeedRadPerSec);
     void requestFirmwareVersion();
     void requestFirmwareDate();
     void setParams(ubiquity_motor::Params::FirmwareParams firmware_params);

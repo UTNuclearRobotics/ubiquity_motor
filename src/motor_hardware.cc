@@ -851,20 +851,14 @@ void MotorHardware::writeSpeeds() {
 
 // areWheelSpeedsLower()  Determine if all wheel joint speeds are below given threshold
 //
-int MotorHardware::areWheelSpeedsLower(double wheelSpeedRadPerSec) {
-    int retCode = 0;
-
+bool MotorHardware::areWheelSpeedsLower(double wheelSpeedRadPerSec) {
     // This call pulls in speeds from the joints array maintained by other layers
 
     double  left_radians  = joints_[WheelJointLocation::Left].velocity_command;
     double  right_radians = joints_[WheelJointLocation::Right].velocity_command;
 
-    if ((std::abs(left_radians)  < wheelSpeedRadPerSec) &&
-        (std::abs(right_radians) < wheelSpeedRadPerSec)) {
-        retCode = 1;
-    }
-
-    return retCode;
+    return ((std::abs(left_radians)  < wheelSpeedRadPerSec) &&
+        (std::abs(right_radians) < wheelSpeedRadPerSec));
 }
 
 void MotorHardware::requestFirmwareVersion() {
