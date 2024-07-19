@@ -159,6 +159,9 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     hardware_interface::return_type read(const rclcpp::Time & time, const rclcpp::Duration & period) override;
     hardware_interface::return_type write(const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
+    // ROS interface
+    void initMcbParameters();
+
     // Motor hardware interface
     void closePort();
     bool openPort();
@@ -217,6 +220,7 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     int wheel_type;
     double wheel_gear_ratio{WHEEL_GEAR_RATIO_DEFAULT};
     int drive_type;
+    int wheel_slip_events{0};
 
 private:
     void _addOdometryRequest(std::vector<MotorMessage>& commands) const;
@@ -231,8 +235,16 @@ private:
     rclcpp::Node::SharedPtr nh_;
 
     ubiquity_motor::ParamListener params_listener_;
-    ubiquity_motor::Params::FirmwareParams fw_params;
+    ubiquity_motor::Params all_params_;
     ubiquity_motor::Params::FirmwareParams prev_fw_params;
+    ubiquity_motor::Params::FirmwareParams& fw_params = all_params_.firmware_params;
+    ubiquity_motor::Params::NodeParams& node_params = all_params_.node_params;
+    ubiquity_motor::Params::CommsParams& serial_params = all_params_.comms_params;
+
+    // Control loop, comms, and other hardware delays
+    std::chrono::milliseconds mcb_status_period_{20};
+    std::chrono::milliseconds zero_velocity_time_{0};
+    std::chrono::milliseconds wheel_slip_nulling_period_{2000};  // A period where if wheels are under stress for this long we back off stress
 
     public: diagnostic_updater::Updater diag_updater;
     private:
@@ -280,6 +292,11 @@ private:
     rclcpp::Publisher<sensor_msgs::msg::BatteryState>::SharedPtr battery_state_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr motor_power_active_pub_;
     rclcpp::Publisher<ubiquity_motor::msg::MotorState>::SharedPtr motor_state_pub_;
+
+    rclcpp::Subscription<std_msgs::msg::String>::SharedPtr system_control_sub_;
+    void SystemControlCallback(std_msgs::msg::String::ConstSharedPtr msg);
+
+    rclcpp::TimerBase::SharedPtr param_update_timer_;
 
     std::unique_ptr<MotorSerial> motor_serial_;
 
