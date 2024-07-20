@@ -208,7 +208,7 @@ ubiquity_motor:
       default_value: 4.294
     }
 
-    wheel_slip_nulling: {
+    wheel_slip_threshold: {
       type: double,
       description: Rotation below which we null excess wheel torque in 4wd drive_type,
       default_value: 0.08,

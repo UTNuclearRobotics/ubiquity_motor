@@ -166,7 +166,7 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     void closePort();
     bool openPort();
     void clearCommands();
-    void readInputs(uint32_t index);
+    void readInputs();
     void writeSpeeds();
     void writeSpeedsInRadians(double left_radians, double right_radians);
     void publishFirmwareInfo();
@@ -221,6 +221,15 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     double wheel_gear_ratio{WHEEL_GEAR_RATIO_DEFAULT};
     int drive_type;
     int wheel_slip_events{0};
+    double left_last_wheel_pos {0.0};
+    double right_last_wheel_pos{0.0};
+    bool wheel_slip_nulling{false};
+
+    bool last_mcb_enabled = false;
+    rclcpp::Time last_joint_time{0};
+    rclcpp::Time last_sys_maint_time{0};
+    rclcpp::Duration estop_release_delay{0, 0};
+    const rclcpp::Duration estop_release_dead_time{std::chrono::milliseconds(800)};
 
 private:
     void _addOdometryRequest(std::vector<MotorMessage>& commands) const;
@@ -241,10 +250,17 @@ private:
     ubiquity_motor::Params::NodeParams& node_params = all_params_.node_params;
     ubiquity_motor::Params::CommsParams& serial_params = all_params_.comms_params;
 
-    // Control loop, comms, and other hardware delays
+    // Control loop delay
     std::chrono::milliseconds mcb_status_period_{20};
-    std::chrono::milliseconds zero_velocity_time_{0};
-    std::chrono::milliseconds wheel_slip_nulling_period_{2000};  // A period where if wheels are under stress for this long we back off stress
+    std::chrono::milliseconds control_loop_period_{100};
+    rclcpp::Duration max_cycle_time = 1.25*control_loop_period_;
+    rclcpp::Duration min_cycle_time = 0.75*control_loop_period_;
+
+    // A period where if wheels are under stress for this long we back off stress
+    rclcpp::Duration wheel_slip_nulling_period_{std::chrono::seconds(2)};  
+
+    // Record of how long the wheels go at zero velocity
+    rclcpp::Duration zero_velocity_time_{rclcpp::Duration(0, 0)};
 
     public: diagnostic_updater::Updater diag_updater;
     private:

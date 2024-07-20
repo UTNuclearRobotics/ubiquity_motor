@@ -362,15 +362,16 @@ auto MotorHardware::on_configure(
     // Retrieve data from the MCB
     requestFirmwareVersion();
     rclcpp::sleep_for(mcb_status_period_);
-    readInputs(0);
+    readInputs();
 
     diag_updater.broadcast(0, "Establishing communication with motors");
     // Start times counter at 1 to prevent false error print (0 % n = 0)
     for (int times = 1; rclcpp::ok() && firmware_version == 0; times++) {
-        if (times % 30 == 0)
+        if (times % 30 == 0) {
             RCLCPP_ERROR(nh_->get_logger(), "The Firmware not reporting its version");
-            requestFirmwareVersion();
-        readInputs(0);
+        }
+        requestFirmwareVersion();
+        readInputs();
         rclcpp::sleep_for(mcb_status_period_);
     }
 
@@ -403,9 +404,8 @@ auto MotorHardware::on_configure(
     // Clear any commands the robot has at this time
     clearCommands();
 
-    double leftLastWheelPos  = 0.0;
-    double rightLastWheelPos = 0.0;
-    getWheelJointPositions(leftLastWheelPos, rightLastWheelPos);
+    // Record the initial state of the wheels
+    getWheelJointPositions(left_last_wheel_pos, right_last_wheel_pos);
 
     RCLCPP_INFO(nh_->get_logger(), "Starting motor control node now");
 
@@ -460,17 +460,158 @@ std::vector<hardware_interface::CommandInterface> MotorHardware::export_command_
 }
 
 hardware_interface::return_type MotorHardware::read(
-    [[maybe_unused]] const rclcpp::Time& time, [[maybe_unused]] const rclcpp::Duration& period)
+    [[maybe_unused]] const rclcpp::Time& time, [[maybe_unused]] const rclcpp::Duration& elapsed_time)
 {
-    readInputs(0);
+    // Determine and set wheel velocities in rad/sec from hardware positions in rads
+    const rclcpp::Duration joint_update_period = std::chrono::milliseconds(250);
+    auto joint_elapsed_time = time - last_joint_time;
+    if (joint_elapsed_time > joint_update_period) {
+        last_joint_time = nh_->now();
+        double left_wheel_pos, right_wheel_pos;
+        getWheelJointPositions(left_wheel_pos, right_wheel_pos);
+        double leftWheelVel  = (left_wheel_pos  - left_last_wheel_pos)  / joint_elapsed_time.seconds();
+        double rightWheelVel = (right_wheel_pos - right_last_wheel_pos) / joint_elapsed_time.seconds();
+        setWheelJointVelocities(leftWheelVel, rightWheelVel); // rad/sec
+        left_last_wheel_pos  = left_wheel_pos;
+        right_last_wheel_pos = right_wheel_pos;
+
+        // Publish motor state at this time
+        publishMotorState();
+
+        // Implement static wheel slippage relief
+        // Deal with auto-null of MCB wheel setpoints if wheel slip nulling is enabled
+        // We null wheel torque if wheel speed has been very low for a long time
+        // This would be even better if we only did this when over a certain current is heating the wheel
+        if (wheel_slip_nulling) {
+            if (areWheelSpeedsLower(node_params.wheel_slip_threshold)) {
+                zero_velocity_time_ = zero_velocity_time_ + joint_update_period;   // add to time at zero velocity
+                if (zero_velocity_time_ > wheel_slip_nulling_period_) {
+                    // null wheel error if at zero velocity for the nulling check period
+                    // OPTION: We could also just null wheels at high wheel power
+                    RCLCPP_DEBUG(nh_->get_logger(), "Applying wheel slip relief now with slip period of %4.1f sec ",
+                        wheel_slip_nulling_period_.seconds());
+                    wheel_slip_events += 1;
+                    nullWheelErrors();
+                    zero_velocity_time_ = rclcpp::Duration(0, 0);   // reset time we have been at zero velocity
+                }
+            } else {
+                zero_velocity_time_ = rclcpp::Duration(0, 0);   // reset time we have been at zero velocity
+            }
+        }
+    }
+
+    // Read in and process all serial packets that came from the MCB.
+    // The MotorSerial class has been receiving and queing packets from the MCB
+    readInputs();
+
     return hardware_interface::return_type::OK;
 }
 
 hardware_interface::return_type MotorHardware::write(
-    [[maybe_unused]] const rclcpp::Time& time, [[maybe_unused]] const rclcpp::Duration& period)
+    const rclcpp::Time& time, const rclcpp::Duration& elapsed_loop_time)
 {
-    writeSpeeds();
+    // Speical handling if motor control is disabled.  skip the entire loop
+    if (!node_params.mcb_control_enabled) {
+        // Check for if we are just starting to go into idle mode and release MCB
+        if (last_mcb_enabled) {
+            RCLCPP_WARN(nh_->get_logger(), "Motor controller going offline and closing MCB serial port");
+            closePort();
+        }
+        last_mcb_enabled = false;
+        return hardware_interface::return_type::OK;
+    }
+
+    // Were disabled but re-enabled so re-setup mcb
+    if (!last_mcb_enabled) {        
+        last_mcb_enabled = true;
+        RCLCPP_WARN(nh_->get_logger(), "Motor controller went from offline to online!");
+
+        // Must re-open serial port
+        if (openPort()) {
+            setSystemEvents(0);  // Clear entire system events register
+            system_events = 0;
+            rclcpp::sleep_for(mcb_status_period_);
+            
+            // Setup MCB parameters that are defined by host parameters in most cases
+            initMcbParameters();
+            RCLCPP_WARN(nh_->get_logger(), "Motor controller has been re-initialized as we go back online");
+        } else {
+            // We do not have recovery from this situation and it seems not possible
+            RCLCPP_ERROR(nh_->get_logger(), "ERROR in re-opening of the Motor controller!");
+        }
+    }
+
+    if (elapsed_loop_time < min_cycle_time || elapsed_loop_time > max_cycle_time) {
+        RCLCPP_WARN(nh_->get_logger(), "Resetting controller due to time jump %f seconds",
+                     elapsed_loop_time.seconds());
+        clearCommands();
+    }
     sendParams();
+
+    // Periodically watch for MCB board having been reset which is an MCB system event
+    // This is also a good place to refresh or show status that may have changed
+    const rclcpp::Duration maint_elapsed = time - last_sys_maint_time;
+    const rclcpp::Duration sys_maint_period = std::chrono::seconds(60);
+    if (maint_elapsed > sys_maint_period) {
+        requestSystemEvents();
+        rclcpp::sleep_for(mcb_status_period_);
+        last_sys_maint_time = nh_->now();
+
+        // See if we are in a low battery voltage state
+        const std::string batStatus = (getBatteryVoltage() < fw_params.battery_voltage.low_level) ? "LOW!" : "OK";
+
+        // Post a status message for MCB state periodically. This may be nice to do more on as required
+        RCLCPP_INFO(nh_->get_logger(), "Battery = %5.2f volts [%s], MCB system events 0x%x,  PidCtrl 0x%x, WheelType '%s' DriveType '%s' GearRatio %6.3f",
+            getBatteryVoltage(), batStatus.c_str(), system_events, getPidControlWord(),
+            (wheel_type == MotorMessage::OPT_WHEEL_TYPE_THIN) ? "thin" : "standard",
+            node_params.drive_type.c_str(), getWheelGearRatio());
+
+        // If we detect a power-on of MCB we should re-initialize MCB
+        if ((system_events & MotorMessage::SYS_EVENT_POWERON) != 0) {
+            RCLCPP_WARN(nh_->get_logger(), "Detected Motor controller PowerOn event!");
+            setSystemEvents(0);  // Clear entire system events register
+            system_events = 0;
+            rclcpp::sleep_for(mcb_status_period_);
+            
+            // Setup MCB parameters that are defined by host parameters in most cases
+            initMcbParameters();
+            RCLCPP_WARN(nh_->get_logger(), "Motor controller has been re-initialized");
+        }
+
+        // A periodic refresh of wheel type which is a safety net due to it's importance.
+        // This can be removed when a solid message protocol is developed
+        if (firmware_version >= MIN_FW_WHEEL_TYPE_THIN) {
+            // Refresh the wheel type setting
+            setWheelType(wheel_type);
+            rclcpp::sleep_for(mcb_status_period_);
+        }
+        // a periodic refresh of drive type which is a safety net due to it's importance.
+        if (firmware_version >= MIN_FW_DRIVE_TYPE) {
+            // Refresh the drive type setting
+            setDriveType(drive_type);
+            rclcpp::sleep_for(mcb_status_period_);
+        }
+    }
+
+    // Update motor controller speeds unless global disable is set, perhaps for colision safety
+    if (getEstopState()) {
+        writeSpeedsInRadians(0.0, 0.0);    // We send zero velocity when estop is active
+        estop_release_delay = estop_release_dead_time;
+    } else {
+        if (estop_release_delay.seconds() > 0.0) {
+            // Implement a delay after estop release where velocity remains zero
+            estop_release_delay = estop_release_delay - elapsed_loop_time;
+            writeSpeedsInRadians(0.0, 0.0);
+        } else {
+            if (node_params.mcb_speed_enabled) {     // A global disable used for safety at node level
+                writeSpeeds();         // Normal operation using current system speeds
+            } else {
+                writeSpeedsInRadians(0.0, 0.0);
+            }
+        }
+    }
+
+    diag_updater.force_update();
     return hardware_interface::return_type::OK;
 }
 
@@ -635,9 +776,9 @@ void MotorHardware::initMcbParameters()
     // For such robots when loaded down the wheels can get in a state where they cannot skid.
     // This leads to motor overheating.  This code below sacrifices accurate odometry which
     // is not achievable in such robots anyway to relieve high wattage drive power when zero velocity.
-    node_params.wheel_slip_nulling = 0;
+    wheel_slip_nulling = false;
     if ((firmware_version >= MIN_FW_WHEEL_NULL_ERROR) && (node_params.drive_type == "4wd")) {
-        node_params.wheel_slip_nulling = 1;
+        wheel_slip_nulling = true;
         RCLCPP_INFO(nh_->get_logger(), "Wheel slip nulling will be enabled for this 4wd system when velocity remains at zero.");
     }
 
@@ -731,7 +872,7 @@ void MotorHardware::publishMotorState(void) {
 // The motor controller sends unsolicited messages periodically so we must read the
 // messages to update status in near realtime
 //
-void MotorHardware::readInputs(uint32_t index) {
+void MotorHardware::readInputs() {
     while (motor_serial_->commandAvailable()) {
         MotorMessage mm;
         mm = motor_serial_->receiveCommand();
@@ -812,10 +953,8 @@ void MotorHardware::readInputs(uint32_t index) {
                         && ((fabs(leftWheelVel) - fabs(rightWheelVel)) < near0WheelVel) )  {
 
                         odom4wdRotationScale = g_odom4wdRotationScale;
-                        if ((index % 16) == 1) {   // This throttles the messages for rotational torque enhancement
-                            RCLCPP_INFO(nh_->get_logger(), "ROTATIONAL_SCALING_ACTIVE: odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%lx 4wd=%d",
+                        RCLCPP_INFO_THROTTLE(nh_->get_logger(), *(nh_->get_clock()), 1.0, "ROTATIONAL_SCALING_ACTIVE: odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%lx 4wd=%d",
                                 odom4wdRotationScale, leftWheelVel, rightWheelVel, leftDir, rightDir, fw_params.hw_options, is4wdMode);
-                        }
                     } else {
                         if (fabs(leftWheelVel) > near0WheelVel) {
                             RCLCPP_DEBUG(nh_->get_logger(), "odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%lx 4wd=%d",
