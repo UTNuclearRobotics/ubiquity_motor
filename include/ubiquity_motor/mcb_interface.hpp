@@ -294,24 +294,55 @@ public:
      */
     void publishMotorState();
 
+    // Firmware revision number
     int firmware_version{0};
+
+    // Firmware date in format 0xYYYYMMDD in hexidecimal
     int firmware_date{0};
+
+    // Binary envoded firmware according to the MotorMessage::HwOptions enum
     int firmware_options{0};
-    int num_fw_params;  // This is used for sendParams as modulo count
+
+    // Total number of firmware parameters. This is used for sendParams as modulo count
+    int num_fw_params;  
+
+    // Version number of the robot MCB
     int hardware_version;
+
+    // Threshold for automatic estop activation based on PID outputs
     int estop_pid_threshold;
+
+    // Max forward speed of the robot (units unknown)
     int max_speed_fwd;
+
+    // Max reverse speed of the robot (units unknown)
     int max_speed_rev;
+
+    // Max pwm sigal 
     int max_pwm;
-    int pid_control;
-    int deadman_enable;
+
+    // Binary encoded system events according to the MotorMessage::SystemEvents enum
     int system_events;
+
+    // Wheel type according to the MotorMessage::HwOptions enum
     int wheel_type;
+
+    // Wheel gear ratio
     double wheel_gear_ratio{WHEEL_GEAR_RATIO_DEFAULT};
+
+    // Wether the robot is using standard drive or 4-wheel drive
     int drive_type;
+
+    // Counter for the number of times the wheel nulling method is called
     int wheel_slip_events{0};
+
+    // Record of the wheel positions in the previous timestep
     double left_last_wheel_pos {0.0};
+
+    // Record of the wheel positions in the previous timestep
     double right_last_wheel_pos{0.0};
+
+    // Flag to indicate if wheel slip nulling is enabled
     bool wheel_slip_nulling{false};
 
 private:
