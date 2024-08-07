@@ -121,6 +121,7 @@ add_library(${PROJECT_NAME}
   src/motor_serial.cc
   src/motor_hardware.cc
   src/motor_diagnostics.cc
+  src/mcb_interface.cc
 )
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp

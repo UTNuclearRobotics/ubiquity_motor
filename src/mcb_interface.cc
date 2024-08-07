@@ -1,5 +1,9 @@
 #include "ubiquity_motor/mcb_interface.hpp"
 
+// Forward declare I2C read function
+static int i2c_BufferRead(const char *i2cDevFile, uint8_t i2c8bitAddr,
+                          uint8_t *pBuffer, int16_t chipRegAddr, uint16_t NumBytesToRead, rclcpp::Logger logger);
+
 namespace ubiquity_motor {
 
 #define LOWEST_FIRMWARE_VERSION 28
@@ -9,7 +13,7 @@ static constexpr double MOTOR_AMPS_PER_ADC_COUNT = 0.0238; // 0.1V/Amp  2.44V=10
 static constexpr double VELOCITY_READ_PER_SECOND = 10.0;   // read = ticks / (100 ms), so we scale of 10 for ticks/second
 static constexpr double HIGH_SPEED_RADIANS       = 1.8;    // threshold to consider wheel turning 'very fast'
 static constexpr double TICKS_PER_RAD_FROM_GEAR_RATIO = 4.774556 * 2.0;
-static constexpr char*  I2C_DEVICE = "/dev/i2c-1";     // This is specific to default Magni I2C port on host
+static const char* I2C_DEVICE = "/dev/i2c-1";              // This is specific to default Magni I2C port on host
 static constexpr uint8_t I2C_PCF8574_8BIT_ADDR = 0x40;
 
 
@@ -171,11 +175,11 @@ void MCBInterface::handleReadOdom(int32_t data) {
     {
         odom4wdRotationScale = ODOM_4WD_ROTATION_SCALE;
         rclcpp::Clock clock{};
-        RCLCPP_INFO_THROTTLE(logger_, clock, 1.0, "ROTATIONAL_SCALING_ACTIVE: odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%lx 4wd=%d",
+        RCLCPP_INFO_THROTTLE(logger_, clock, 1.0, "ROTATIONAL_SCALING_ACTIVE: odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%x 4wd=%d",
                 odom4wdRotationScale, joints_[LEFT].velocity, joints_[RIGHT].velocity, leftDir, rightDir, firmware_options, (drive_type_ == DRIVER_TYPE_4WD));
     } else {
         if (fabs(joints_[LEFT].velocity) > WHEEL_VELOCITY_NEAR_ZERO) {
-            RCLCPP_DEBUG(logger_, "odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%lx 4wd=%d",
+            RCLCPP_DEBUG(logger_, "odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%x 4wd=%d",
                 odom4wdRotationScale, joints_[LEFT].velocity, joints_[RIGHT].velocity, leftDir, rightDir, firmware_options, (drive_type_ == DRIVER_TYPE_4WD));
         }
     }
@@ -203,7 +207,7 @@ void MCBInterface::handleReadPWM(int32_t data) {
 void MCBInterface::handleReadLeftCurrent(int32_t data) {
     // Motor current is an absolute value and goes up from a nominal count of near 1024
     // So we subtract a nominal offset then multiply count * scale factor to get amps
-    int32_t data = data & 0xffff;
+    data = data & 0xffff;
     motor_diag_.motorCurrentLeft =
         (double)(data - motor_diag_.motorAmpsZeroAdcCount) * MOTOR_AMPS_PER_ADC_COUNT;
 }
@@ -211,7 +215,7 @@ void MCBInterface::handleReadLeftCurrent(int32_t data) {
 void MCBInterface::handleReadRightCurrent(int32_t data) {
     // Motor current is an absolute value and goes up from a nominal count of near 1024
     // So we subtract a nominal offset then multiply count * scale factor to get amps
-    int32_t data = data & 0xffff;
+    data = data & 0xffff;
     motor_diag_.motorCurrentRight =
         (double)(data - motor_diag_.motorAmpsZeroAdcCount) * MOTOR_AMPS_PER_ADC_COUNT;
 }
@@ -829,7 +833,7 @@ double MCBInterface::calculateRadiansFromTicks(int16_t ticks) {
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
-static int i2c_BufferRead(const char *i2cDevFile, uint8_t i2c8bitAddr,
+int i2c_BufferRead(const char *i2cDevFile, uint8_t i2c8bitAddr,
                           uint8_t *pBuffer, int16_t chipRegAddr, uint16_t NumBytesToRead, rclcpp::Logger logger)
 {
    int bytesRead = 0;
