@@ -8,6 +8,9 @@ static constexpr double ODOM_4WD_ROTATION_SCALE  = 1.65;
 static constexpr double MOTOR_AMPS_PER_ADC_COUNT = 0.0238; // 0.1V/Amp  2.44V=1024 count so 41.97 cnt/amp
 static constexpr double VELOCITY_READ_PER_SECOND = 10.0;   // read = ticks / (100 ms), so we scale of 10 for ticks/second
 static constexpr double HIGH_SPEED_RADIANS       = 1.8;    // threshold to consider wheel turning 'very fast'
+static constexpr double TICKS_PER_RAD_FROM_GEAR_RATIO = 4.774556 * 2.0;
+static constexpr char*  I2C_DEVICE = "/dev/i2c-1";     // This is specific to default Magni I2C port on host
+static constexpr uint8_t I2C_PCF8574_8BIT_ADDR = 0x40;
 
 
 void MCBInterface::closePort() {
@@ -28,6 +31,10 @@ bool MCBInterface::openPort() {
         return false;
     }
 }
+
+// ================================================================================================
+// Read data from MCB
+// ================================================================================================
 
 void MCBInterface::readInputs() {
     while (motor_serial_->commandAvailable()) {
@@ -308,17 +315,17 @@ void MCBInterface::handleReadBatteryVoltage(int32_t data) {
 void MCBInterface::handleReadMotorPowerActive(int32_t data) {
     // Starting with rev 5.0 board we can see power state
     if (data & MotorMessage::MOT_POW_ACTIVE) {
-        if (estop_motor_power_off == true) {
+        if (estop_motor_power_off_ == true) {
             RCLCPP_WARN(logger_, "Motor power has gone from inactive to active. Most likely from ESTOP switch");
         }
-        estop_motor_power_off = false;
+        estop_motor_power_off_ = false;
     } else {
-        if (estop_motor_power_off == false) {
+        if (estop_motor_power_off_ == false) {
             RCLCPP_WARN(logger_, "Motor power has gone inactive. Most likely from ESTOP switch active");
         }
-        estop_motor_power_off = true;
+        estop_motor_power_off_ = true;
     }
-    motor_diag_.estop_motor_power_off = estop_motor_power_off;  // A copy for diagnostics topic
+    motor_diag_.estop_motor_power_off = estop_motor_power_off_;  // A copy for diagnostics topic
 
     // std_msgs::msg::Bool estop_message;
     // estop_message.data = !estop_motor_power_off;
@@ -352,6 +359,7 @@ void MCBInterface::handleReadEncodeTimeInc(int32_t data) {
 }
 
 // ================================================================================================
+// Write data to MCB
 // ================================================================================================
 
 void MCBInterface::writeSpeedsInRadians(double left_radians, double right_radians) {
@@ -432,6 +440,187 @@ void MCBInterface::requestSystemEvents() {
     sys_event_msg.setType(MotorMessage::TYPE_READ);
     sys_event_msg.setData(0);
     motor_serial_->transmitCommand(sys_event_msg);
+}
+
+void MCBInterface::setDeadmanTimer(int32_t data) {
+    RCLCPP_ERROR(logger_, "setting deadman to %d", (int)data);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_DEADMAN);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(data);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setDeadzoneEnable(int32_t deadzone_enable) {
+    RCLCPP_ERROR(logger_, "setting deadzone enable to %d", (int)deadzone_enable);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_DEADZONE);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(deadzone_enable);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setDebugLeds(bool led1_val, bool led2_val) {
+    std::vector<MotorMessage> commands;
+
+    MotorMessage led1;
+    led1.setRegister(MotorMessage::REG_LED_1);
+    led1.setType(MotorMessage::TYPE_WRITE);
+    if (led1_val) {
+        led1.setData(0x00000001);
+    } else {
+        led1.setData(0x00000000);
+    }
+    commands.push_back(led1);
+
+    MotorMessage led2;
+    led2.setRegister(MotorMessage::REG_LED_2);
+    led2.setType(MotorMessage::TYPE_WRITE);
+    if (led2_val) {
+        led2.setData(0x00000001);
+    } else {
+        led2.setData(0x00000000);
+    }
+    commands.push_back(led2);
+
+    motor_serial_->transmitCommands(commands);
+}
+
+void MCBInterface::setHardwareVersion(int32_t hardware_version) {
+    RCLCPP_INFO(logger_, "setting hardware_version to %x", (int)hardware_version);
+    this->hardware_version = hardware_version;
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_HARDWARE_VERSION);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(hardware_version);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setEstopPidThreshold(int32_t estop_pid_threshold) {
+    RCLCPP_INFO(logger_, "setting Estop PID threshold to %d", (int)estop_pid_threshold);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_PID_MAX_ERROR);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(estop_pid_threshold);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setEstopDetection(int32_t estop_detection) {
+    RCLCPP_INFO(logger_, "setting estop button detection to %x", (int)estop_detection);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_ESTOP_ENABLE);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(estop_detection);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setMaxFwdSpeed(int32_t max_speed_fwd) {
+    RCLCPP_INFO(logger_, "setting max motor forward speed to %d", (int)max_speed_fwd);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_MAX_SPEED_FWD);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(max_speed_fwd);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setMaxRevSpeed(int32_t max_speed_rev) {
+    RCLCPP_INFO(logger_, "setting max motor reverse speed to %d", (int)max_speed_rev);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_MAX_SPEED_REV);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(max_speed_rev);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setMaxPwm(int32_t max_pwm) {
+    RCLCPP_INFO(logger_, "setting max motor PWM to %x", (int)max_pwm);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_MAX_PWM);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(max_pwm);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setWheelType(int32_t new_wheel_type) {
+    MotorMessage mm;
+    switch(new_wheel_type) {
+        case MotorMessage::OPT_WHEEL_TYPE_STANDARD:
+        case MotorMessage::OPT_WHEEL_TYPE_THIN:
+            RCLCPP_INFO_ONCE(logger_, "setting MCB wheel type %d", (int)new_wheel_type);
+            wheel_type_ = new_wheel_type;
+            mm.setRegister(MotorMessage::REG_WHEEL_TYPE);
+            mm.setType(MotorMessage::TYPE_WRITE);
+            mm.setData(wheel_type_);
+            motor_serial_->transmitCommand(mm);
+            break;
+        default:
+            RCLCPP_ERROR(logger_, "Illegal MCB wheel type 0x%x will not be set!", (int)new_wheel_type);
+    }
+}
+
+void MCBInterface::setWheelGearRatio(double new_wheel_gear_ratio) {
+    // This gear ratio is not used by the firmware so it is a simple state element in this module
+    wheel_gear_ratio_ = new_wheel_gear_ratio;
+    ticks_per_radian  = getWheelTicksPerRadian();   // Need to also reset ticks_per_radian
+    if ((fw_params_->hw_options & MotorMessage::OPT_ENC_6_STATE) == 0) {
+        ticks_per_radian = ticks_per_radian / (double)(2.0);   // 3 state was half
+    }
+    RCLCPP_INFO(logger_, "Setting Wheel gear ratio to %6.4f and tics_per_radian to %6.4f",
+        wheel_gear_ratio_, ticks_per_radian);
+}
+
+void MCBInterface::setDriveType(int32_t drive_type) {
+    RCLCPP_INFO_ONCE(logger_, "Setting MCB drive type %d", (int)drive_type);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_DRIVE_TYPE);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(drive_type);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setPidControl(int32_t pid_control_word) {
+    RCLCPP_INFO_ONCE(logger_, "setting MCB pid control word to 0x%x", (int)pid_control_word);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_PID_CONTROL);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(pid_control_word);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::nullWheelErrors() {
+    RCLCPP_DEBUG(logger_, "Nulling MCB wheel errors using current wheel positions");
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_WHEEL_NULL_ERR);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(MotorOrWheelNumber::Motor_M1|MotorOrWheelNumber::Motor_M2);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setWheelDirection(int32_t wheel_direction) {
+    RCLCPP_INFO(logger_, "setting MCB wheel direction to %d", (int)wheel_direction);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_WHEEL_DIR);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(wheel_direction);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setOptionSwitchReg(int32_t option_switch_bits) {
+    RCLCPP_INFO(logger_, "setting MCB option switch register to 0x%x", (int)option_switch_bits);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_OPTION_SWITCH);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(option_switch_bits);
+    motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::setSystemEvents(int32_t system_events) {
+    RCLCPP_INFO(logger_, "setting MCB system event register to %d", (int)system_events);
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_SYSTEM_EVENTS);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(system_events);
+    motor_serial_->transmitCommand(mm);
 }
 
 void MCBInterface::sendParams() {
@@ -535,4 +724,153 @@ void MCBInterface::sendParams() {
     }
 }
 
+// ================================================================================================
+// Utility functions
+// ================================================================================================
+
+void MCBInterface::forcePidParamUpdates() {
+    // Reset each of the flags that causes parameters to be  sent to MCB by sendParams()
+    prev_fw_params_.pid.proportional = -1;
+    prev_fw_params_.pid.integral = -1;
+    prev_fw_params_.pid.derivative = -1;
+    prev_fw_params_.pid.velocity = -1;
+    prev_fw_params_.pid.denominator = -1;
+    prev_fw_params_.pid.moving_buffer_size = -1;
+    prev_fw_params_.max_pwm = -1;
+    prev_fw_params_.pid.control = 1;
+}
+
+float MCBInterface::getBatteryVoltage() {
+    return motor_diag_.battery_voltage; 
+}
+
+bool MCBInterface::getEstopState() {
+    return estop_motor_power_off_;
+}
+
+double MCBInterface::getWheelGearRatio() {
+    return wheel_gear_ratio_;
+}
+
+double MCBInterface::getWheelTicksPerRadian() {
+    return this->getWheelGearRatio() * TICKS_PER_RAD_FROM_GEAR_RATIO;
+}
+
+std::pair<double, double> MCBInterface::getMotorCurrents() {
+    return {
+        motor_diag_.motorCurrentLeft,
+        motor_diag_.motorCurrentRight
+    };
+}
+
+int MCBInterface::getOptionSwitch() {
+    uint8_t buf[16];
+    int retBits = 0;
+    RCLCPP_INFO(logger_, "reading MCB option switch on the I2C bus");
+    int retCount = i2c_BufferRead(I2C_DEVICE, I2C_PCF8574_8BIT_ADDR, &buf[0], -1, 1, logger_);
+    if (retCount < 0) {
+        RCLCPP_ERROR(logger_, "Error %d in reading MCB option switch at 8bit Addr 0x%x",
+            retCount, I2C_PCF8574_8BIT_ADDR);
+        retBits = retCount;
+    } else if (retCount != 1) {
+        RCLCPP_ERROR(logger_, "Cannot read byte from MCB option switch at 8bit Addr 0x%x", I2C_PCF8574_8BIT_ADDR);
+        retBits = -1;
+    } else {
+        retBits = (0xff) & ~buf[0];
+    }
+
+    return retBits;
+}
+
+int MCBInterface::getPidControlWord() {
+    return motor_diag_.fw_pid_control;
+}
+
+std::pair<double, double> MCBInterface::getWheelJointPositions() {
+    return {joints_[WheelJointLocation::LEFT].position,
+            joints_[WheelJointLocation::RIGHT].position};
+}
+
+std::pair<double, double> MCBInterface::setWheelJointVelocities() {
+    return {joints_[WheelJointLocation::LEFT].velocity,
+            joints_[WheelJointLocation::RIGHT].velocity};
+}
+
+// ================================================================================================
+// Private Methods
+// ================================================================================================
+
+int16_t MCBInterface::calculateSpeedFromRadians(double radians) {
+    // The firmware accepts same units for speed value
+    // and will deal with it properly depending on encoder handling in use
+    const double encoderFactor = (fw_params_->hw_options & MotorMessage::OPT_ENC_6_STATE) ? 0.5 : 1.0;
+    const double speedFloat = encoderFactor * radians * ((getWheelTicksPerRadian() * 4.0) / VELOCITY_READ_PER_SECOND);
+
+    return static_cast<int16_t>(std::round(speedFloat));
+}
+
+double MCBInterface::calculateRadiansFromTicks(int16_t ticks) {
+    return (static_cast<double>(ticks) * VELOCITY_READ_PER_SECOND) / (getWheelTicksPerRadian() * 4.0);
+}
+
+
 } // namespace ubiquity_motor
+
+
+
+
+// ================================================================================================
+// I2C Interface
+// ================================================================================================
+
+// To access I2C we need some system includes
+#include <linux/i2c-dev.h>
+#include <linux/i2c.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+
+static int i2c_BufferRead(const char *i2cDevFile, uint8_t i2c8bitAddr,
+                          uint8_t *pBuffer, int16_t chipRegAddr, uint16_t NumBytesToRead, rclcpp::Logger logger)
+{
+   int bytesRead = 0;
+   int retCode   = 0;
+
+    int fd;                                         // File descrition
+    int  address   = i2c8bitAddr >> 1;              // Address of the I2C device
+    uint8_t buf[8];                                 // Buffer for data being written to the i2c device
+
+    if ((fd = open(i2cDevFile, O_RDWR)) < 0) {      // Open port for reading and writing
+      retCode = -2;
+      RCLCPP_ERROR(logger, "Cannot open I2C def of %s with error %s", i2cDevFile, strerror(errno));
+      goto exitWithNoClose;
+    }
+
+    // The ioctl here will address the I2C slave device making it ready for 1 or more other bytes
+    if (ioctl(fd, I2C_SLAVE, address) != 0) {        // Set the port options and addr of the dev
+      retCode = -3;
+      RCLCPP_ERROR(logger, "Failed to get bus access to I2C device %s!  ERROR: %s", i2cDevFile, strerror(errno));
+      goto exitWithFileClose;
+    }
+
+    if (chipRegAddr < 0) {     // Suppress reg address if negative value was used
+      buf[0] = (uint8_t)(chipRegAddr);          // Internal chip register address
+      if ((write(fd, buf, 1)) != 1) {           // Write both bytes to the i2c port
+        retCode = -4;
+        goto exitWithFileClose;
+      }
+    }
+
+    bytesRead = read(fd, pBuffer, NumBytesToRead);
+    if (bytesRead != NumBytesToRead) {      // verify the number of bytes we requested were read
+      retCode = -9;
+      goto exitWithFileClose;
+    }
+    retCode = bytesRead;
+
+  exitWithFileClose:
+    close(fd);
+
+  exitWithNoClose:
+
+  return retCode;
+}
