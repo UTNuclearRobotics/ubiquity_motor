@@ -45,6 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "motor_parameters.hpp"
 #include "ubiquity_motor/motor_serial.h"
 #include "ubiquity_motor/motor_diagnostics.hpp"
+#include "ubiquity_motor/mcb_interface.hpp"
 
 #include <gtest/gtest_prod.h>
 
@@ -64,6 +65,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define TICKS_PER_RAD_FROM_GEAR_RATIO   ((double)(4.774556)*(double)(2.0))  // Used to generate ticks per radian 
 #define TICKS_PER_RADIAN_DEFAULT        41.004  // For runtime use  getWheelGearRatio() * TICKS_PER_RAD_FROM_GEAR_RATIO    
 #define WHEEL_GEAR_RATIO_DEFAULT        WHEEL_GEAR_RATIO_1
+
+namespace ubiquity_motor {
 
 class MotorHardware : public hardware_interface::SystemInterface {
 public:
@@ -87,67 +90,12 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     void initMcbParameters();
 
     // Motor hardware interface
-    void closePort();
-    bool openPort();
     void clearCommands();
-    void readInputs();
-    void writeSpeeds();
-    void writeSpeedsInRadians(double left_radians, double right_radians);
     void publishFirmwareInfo();
-    float calculateBatteryPercentage(float voltage, int cells, const float* type);
     bool areWheelSpeedsLower(double wheelSpeedRadPerSec);
-    void requestFirmwareVersion();
-    void requestFirmwareDate();
-    void setParams(ubiquity_motor::Params::FirmwareParams firmware_params);
-    void sendParams();
-    void forcePidParamUpdates();
-    float getBatteryVoltage(void);
-    void setDeadmanTimer(int32_t deadman);
-    void setDeadzoneEnable(int32_t deadzone_enable);
-    void setDebugLeds(bool led1, bool led2);
-    void setHardwareVersion(int32_t hardware_version);
-    void setEstopPidThreshold(int32_t estop_pid_threshold);
-    void setEstopDetection(int32_t estop_detection);
-    bool getEstopState(void);
-    void setMaxFwdSpeed(int32_t max_speed_fwd);
-    void setMaxRevSpeed(int32_t max_speed_rev);
-    void setMaxPwm(int32_t max_pwm);
-    void setWheelType(int32_t wheel_type);
-    void setWheelGearRatio(double wheel_gear_ratio);
-    double getWheelGearRatio(void);
-    double getWheelTicksPerRadian(void);
-    void setDriveType(int32_t drive_type);
-    void setPidControl(int32_t pid_control);
-    void nullWheelErrors(void);
-    void setWheelDirection(int32_t wheel_direction);
-    void getMotorCurrents(double &currentLeft, double &currentRight);
-    int  getOptionSwitch(void);
-    int  getPidControlWord(void);
-    void setOptionSwitchReg(int32_t option_switch);
-    void requestSystemEvents();
-    void setSystemEvents(int32_t system_events);
-    void getWheelJointPositions(double &leftWheelPosition, double &rightWheelPosition);
-    void setWheelJointVelocities(double leftWheelVelocity, double rightWheelVelocity);
-    void publishMotorState(void);
-    int firmware_version{0};
-    int firmware_date{0};
-    int firmware_options{0};
-    int num_fw_params;  // This is used for sendParams as modulo count
-    int hardware_version;
-    int estop_pid_threshold;
-    int max_speed_fwd;
-    int max_speed_rev;
-    int max_pwm;
-    int pid_control;
-    int deadman_enable;
-    int system_events;
-    int wheel_type;
-    double wheel_gear_ratio{WHEEL_GEAR_RATIO_DEFAULT};
-    int drive_type;
-    int wheel_slip_events{0};
+    void publishMotorState();
     double left_last_wheel_pos {0.0};
     double right_last_wheel_pos{0.0};
-    bool wheel_slip_nulling{false};
 
     bool last_mcb_enabled = false;
     rclcpp::Time last_joint_time{0};
@@ -156,15 +104,6 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
     const rclcpp::Duration estop_release_dead_time{std::chrono::milliseconds(800)};
 
 private:
-    void _addOdometryRequest(std::vector<MotorMessage>& commands) const;
-    void _addVelocityRequest(std::vector<MotorMessage>& commands) const;
-
-    int16_t calculateSpeedFromRadians(double radians);
-    double calculateRadiansFromTicks(int16_t ticks);
-
-    std::vector<hardware_interface::StateInterface> joint_state_interface_;
-    std::vector<hardware_interface::CommandInterface> velocity_joint_interface_;
-
     rclcpp::Node::SharedPtr nh_;
 
     ubiquity_motor::ParamListener params_listener_;
@@ -173,6 +112,14 @@ private:
     ubiquity_motor::Params::FirmwareParams& fw_params = all_params_.firmware_params;
     ubiquity_motor::Params::NodeParams& node_params = all_params_.node_params;
     ubiquity_motor::Params::CommsParams& serial_params = all_params_.comms_params;
+
+    MCBInterface mcb_interface_;
+
+    void _addOdometryRequest(std::vector<MotorMessage>& commands) const;
+    void _addVelocityRequest(std::vector<MotorMessage>& commands) const;
+
+    std::vector<hardware_interface::StateInterface> joint_state_interface_;
+    std::vector<hardware_interface::CommandInterface> velocity_joint_interface_;
 
     // Control loop delay
     std::chrono::milliseconds mcb_status_period_{20};
@@ -186,26 +133,9 @@ private:
     // Record of how long the wheels go at zero velocity
     rclcpp::Duration zero_velocity_time_{rclcpp::Duration(0, 0)};
 
-    public: diagnostic_updater::Updater diag_updater;
-    private:
+    diagnostic_updater::Updater diag_updater;
 
-    int32_t deadman_timer;
-
-    double  ticks_per_radian{TICKS_PER_RADIAN_DEFAULT}; // Odom ticks per radian for wheel encoders in use
-
-    int32_t sendPid_count;
-
-    bool estop_motor_power_off{false};    // Motor power inactive, most likely from ESTOP switch
-
-    struct Joint {
-        double position;
-        double velocity;
-        double effort;
-        double velocity_command;
-
-        Joint() : position(0), velocity(0), effort(0), velocity_command(0) {}
-    };
-    std::array<Joint, 2> joints_;
+    std::array<double, 2> joint_velocity_commands_;
 
     // MessageTypes enum for refering to motor or wheel number
     enum MotorOrWheelNumber {
@@ -240,11 +170,11 @@ private:
 
     std::unique_ptr<MotorSerial> motor_serial_;
 
-    MotorDiagnostics motor_diag_;
-
     FRIEND_TEST(MotorHardwareTests, nonZeroWriteSpeedsOutputs);
     FRIEND_TEST(MotorHardwareTests, odomUpdatesPosition);
     FRIEND_TEST(MotorHardwareTests, odomUpdatesPositionMax);
 };
+
+} // namespace ubiquity_motor
 
 #endif

@@ -1,7 +1,6 @@
 #ifndef MCBINTERFACE_HPP
 #define MCBINTERFACE_HPP
 
-#include <rclcpp/node.hpp>
 #include <rclcpp/logging.hpp>
 
 #include "motor_parameters.hpp"
@@ -17,8 +16,23 @@ static constexpr double TICKS_PER_RADIAN_DEFAULT = 41.004;  // For runtime use  
 
 #define WHEEL_GEAR_RATIO_DEFAULT WHEEL_GEAR_RATIO_1
 
-class MCBInterface : public rclcpp::Node {
+class MCBInterface {
 public:
+
+    MCBInterface(Params::FirmwareParams& fw_params);
+
+    enum DriveType {
+        DRIVER_TYPE_STANDARD = 0,
+        DRIVER_TYPE_4WD      = 1
+    };
+
+    struct Joint {
+        double position{};         // rad
+        double velocity{};         // rad/s
+        double effort{};           // Nm
+
+        int16_t velocity_error{};  
+    };
 
     /**
      * Close off the serial port is used in a special case of suspending the motor controller
@@ -246,11 +260,39 @@ public:
     double getWheelTicksPerRadian();
 
     /**
+     * Get the currently configured wheel type for the robot
+     * 
+     * @note This returns local data and does not interact with the MCB
+     */
+    MotorMessage::HwOptions getWheelType() const;
+
+    /**
+     * Get the currently configured drive type for the robot
+     * 
+     * @note This returns local data and does not interact with the MCB
+     */
+    DriveType getDriveType() const;
+
+    /**
      * Getter for the wheel currents in amps
      * 
      * @note This returns local data and does not interact with the MCB
      */
     std::pair<double, double> getMotorCurrents();
+
+    /**
+     * Read the current wheel positions in radians both at once for a snapshot of position 
+     * 
+     * @return Pair with left and right wheel positions, respectively
+     */    
+    std::pair<double, double> getWheelJointPositions();
+
+    /**
+     * Read the current wheel drive values both at once 
+     * 
+     * @return Pair with left and right wheel drive values, respectively
+     */    
+    std::pair<double, double> getWheelPWMDrives();
 
     /**
      * Read the controller board option switch itself that resides on the I2C bus 
@@ -265,18 +307,14 @@ public:
     int getPidControlWord();
 
     /**
-     * Read the current wheel positions in radians both at once for a snapshot of position 
-     * 
-     * @return Pair with left and right wheel positions, respectively
-     */    
-    std::pair<double, double> getWheelJointPositions();
+     * Set the current wheel joing velocities in radians/sec both at once for a snapshot of velocity
+     */
+    void setWheelJointVelocities(double leftWheelVelocity, double rightWheelVelocity);
 
     /**
-     * Set the current wheel joing velocities in radians/sec both at once for a snapshot of velocity
-     * 
-     * @return Pair with left and right wheel velocities, respectively
+     * Get a pointer to the diagnostic interface for adding to a diagnostic updater
      */
-    std::pair<double, double> setWheelJointVelocities();
+    MotorDiagnostics* getBaseDiagnosticInterface();
 
     // /**
     //  * Publish motor state conditions
@@ -312,12 +350,6 @@ public:
     // Binary encoded system events according to the MotorMessage::SystemEvents enum
     int system_events;
 
-    // Wheel type according to the MotorMessage::HwOptions enum
-    
-
-    // Wether the robot is using standard drive or 4-wheel drive
-    int drive_type{DRIVER_TYPE_STANDARD};
-
     // Counter for the number of times the wheel nulling method is called
     int wheel_slip_events{0};
 
@@ -337,6 +369,9 @@ public:
     uint16_t leftTickSpacing{0};
     uint16_t rightTickSpacing{0};
 
+    // The current state of both joints
+    std::array<Joint, 2> joints;
+
 private:
     // The serial interface with the MCB
     std::unique_ptr<MotorSerial> motor_serial_;
@@ -351,7 +386,7 @@ private:
 
     // Parameters and status
     double wheel_gear_ratio_{WHEEL_GEAR_RATIO_DEFAULT};
-    int wheel_type_{MotorMessage::OPT_WHEEL_TYPE_STANDARD};
+    MotorMessage::HwOptions wheel_type_{MotorMessage::OPT_WHEEL_TYPE_STANDARD};
     bool estop_motor_power_off_{false};                          // Flag to indicate if the motor power is off
 
     // MessageTypes enum for refering to motor or wheel number
@@ -366,19 +401,7 @@ private:
         RIGHT = 1
     };
 
-    enum DriveType {
-        DRIVER_TYPE_STANDARD = 0,
-        DRIVER_TYPE_4WD      = 1
-    } drive_type_;
-
-    struct Joint {
-        double position{};         // rad
-        double velocity{};         // rad/s
-        double effort{};           // Nm
-
-        int16_t velocity_error{};  
-    };
-    std::array<Joint, 2> joints_;
+    DriveType drive_type_ = DRIVER_TYPE_STANDARD;
 
     int16_t calculateSpeedFromRadians(double radians);
     double calculateRadiansFromTicks(int16_t ticks);

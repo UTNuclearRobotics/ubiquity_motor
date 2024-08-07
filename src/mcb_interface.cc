@@ -16,6 +16,30 @@ static constexpr double TICKS_PER_RAD_FROM_GEAR_RATIO = 4.774556 * 2.0;
 static const char* I2C_DEVICE = "/dev/i2c-1";              // This is specific to default Magni I2C port on host
 static constexpr uint8_t I2C_PCF8574_8BIT_ADDR = 0x40;
 
+MCBInterface::MCBInterface(Params::FirmwareParams& fw_params) :
+fw_params_(&fw_params)
+{
+    prev_fw_params_.pid.proportional = -1;
+    prev_fw_params_.pid.integral = -1;
+    prev_fw_params_.pid.derivative = -1;
+    prev_fw_params_.pid.velocity = -1;
+    prev_fw_params_.pid.denominator = -1;
+    prev_fw_params_.pid.control = -1;
+    prev_fw_params_.pid.moving_buffer_size = -1;
+    prev_fw_params_.max_speed_fwd = -1;
+    prev_fw_params_.max_speed_rev = -1;
+    prev_fw_params_.deadman_timer = -1;
+    prev_fw_params_.deadzone_enable = -1;
+    prev_fw_params_.hw_options = -1;
+    prev_fw_params_.option_switch = -1;
+    prev_fw_params_.system_events = -1;
+    prev_fw_params_.controller_board_version = -1;
+    prev_fw_params_.estop_detection = -1;
+    prev_fw_params_.estop_pid_threshold = -1;
+    prev_fw_params_.max_speed_fwd = -1;
+    prev_fw_params_.max_speed_rev = -1;
+    prev_fw_params_.max_pwm = -1;
+}
 
 void MCBInterface::closePort() {
     if (motor_serial_)
@@ -157,8 +181,8 @@ void MCBInterface::handleReadOdom(int32_t data) {
     double odom4wdRotationScale = 1.0;
 
     // Determine if we are rotating then set a scale to account for rotational wheel slip
-    int leftDir  = (joints_[LEFT].velocity >= 0.0) ? 1 : -1;
-    int rightDir = (joints_[RIGHT].velocity >= 0.0) ? 1 : -1;
+    int leftDir  = (joints[LEFT].velocity >= 0.0) ? 1 : -1;
+    int rightDir = (joints[RIGHT].velocity >= 0.0) ? 1 : -1;
     // int is4wdMode = (fw_params.hw_options & MotorMessage::OPT_DRIVE_TYPE_4WD);
     if (
         // Is this in 4wd robot mode
@@ -168,33 +192,33 @@ void MCBInterface::handleReadOdom(int32_t data) {
         && ((leftDir + rightDir) == 0)
 
         // Are Both joints not near joint velocity of 0
-        && ((std::abs(joints_[LEFT].velocity) > WHEEL_VELOCITY_NEAR_ZERO) && (std::abs(joints_[RIGHT].velocity) > WHEEL_VELOCITY_NEAR_ZERO))
+        && ((std::abs(joints[LEFT].velocity) > WHEEL_VELOCITY_NEAR_ZERO) && (std::abs(joints[RIGHT].velocity) > WHEEL_VELOCITY_NEAR_ZERO))
 
         // Is the difference of the two absolute values of the joint velocities near zero
-        && ((std::abs(joints_[LEFT].velocity) - std::abs(joints_[RIGHT].velocity)) < WHEEL_VELOCITY_NEAR_ZERO) )  
+        && ((std::abs(joints[LEFT].velocity) - std::abs(joints[RIGHT].velocity)) < WHEEL_VELOCITY_NEAR_ZERO) )  
     {
         odom4wdRotationScale = ODOM_4WD_ROTATION_SCALE;
         rclcpp::Clock clock{};
         RCLCPP_INFO_THROTTLE(logger_, clock, 1.0, "ROTATIONAL_SCALING_ACTIVE: odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%x 4wd=%d",
-                odom4wdRotationScale, joints_[LEFT].velocity, joints_[RIGHT].velocity, leftDir, rightDir, firmware_options, (drive_type_ == DRIVER_TYPE_4WD));
+                odom4wdRotationScale, joints[LEFT].velocity, joints[RIGHT].velocity, leftDir, rightDir, firmware_options, (drive_type_ == DRIVER_TYPE_4WD));
     } else {
-        if (fabs(joints_[LEFT].velocity) > WHEEL_VELOCITY_NEAR_ZERO) {
+        if (fabs(joints[LEFT].velocity) > WHEEL_VELOCITY_NEAR_ZERO) {
             RCLCPP_DEBUG(logger_, "odom4wdRotationScale = %4.2f [%4.2f, %4.2f] [%d,%d] opt 0x%x 4wd=%d",
-                odom4wdRotationScale, joints_[LEFT].velocity, joints_[RIGHT].velocity, leftDir, rightDir, firmware_options, (drive_type_ == DRIVER_TYPE_4WD));
+                odom4wdRotationScale, joints[LEFT].velocity, joints[RIGHT].velocity, leftDir, rightDir, firmware_options, (drive_type_ == DRIVER_TYPE_4WD));
         }
     }
 
     // Add or subtract from position in radians using the incremental odom value
-    joints_[LEFT].position  += (odomLeft / (ticks_per_radian * odom4wdRotationScale));
-    joints_[RIGHT].position += (odomRight / (ticks_per_radian * odom4wdRotationScale));
+    joints[LEFT].position  += (odomLeft / (ticks_per_radian * odom4wdRotationScale));
+    joints[RIGHT].position += (odomRight / (ticks_per_radian * odom4wdRotationScale));
 
     motor_diag_.odom_update_status.tick(); // Let diag know we got odom
 }
 
 void MCBInterface::handleReadSpeedError(int32_t data) {
     int32_t speed = data;
-    joints_[LEFT].velocity_error  = (speed >> 16) & 0xffff;
-    joints_[RIGHT].velocity_error = speed & 0xffff;
+    joints[LEFT].velocity_error  = (speed >> 16) & 0xffff;
+    joints[RIGHT].velocity_error = speed & 0xffff;
 }
 
 void MCBInterface::handleReadPWM(int32_t data) {
@@ -391,8 +415,8 @@ void MCBInterface::writeSpeedsInRadians(double left_radians, double right_radian
 
 
     // RCLCPP_ERROR(nh_->get_logger(), "velocity_command %f rad/s %f rad/s",
-    // joints_[WheelJointLocation::Left].velocity_command, joints_[WheelJointLocation::Right].velocity_command);
-    // joints_[LEFT_WHEEL_JOINT].velocity_command, joints_[RIGHT_WHEEL_JOINT].velocity_command);
+    // joints[WheelJointLocation::Left].velocity_command, joints[WheelJointLocation::Right].velocity_command);
+    // joints[LEFT_WHEEL_JOINT].velocity_command, joints[RIGHT_WHEEL_JOINT].velocity_command);
     // RCLCPP_ERROR(nh_->get_logger(), "SPEEDS %d %d", left.getData(), right.getData());
 }
 
@@ -546,20 +570,24 @@ void MCBInterface::setMaxPwm(int32_t max_pwm) {
 }
 
 void MCBInterface::setWheelType(int32_t new_wheel_type) {
-    MotorMessage mm;
     switch(new_wheel_type) {
         case MotorMessage::OPT_WHEEL_TYPE_STANDARD:
+            wheel_type_ = MotorMessage::OPT_WHEEL_TYPE_STANDARD;
+            break;
         case MotorMessage::OPT_WHEEL_TYPE_THIN:
-            RCLCPP_INFO_ONCE(logger_, "setting MCB wheel type %d", (int)new_wheel_type);
-            wheel_type_ = new_wheel_type;
-            mm.setRegister(MotorMessage::REG_WHEEL_TYPE);
-            mm.setType(MotorMessage::TYPE_WRITE);
-            mm.setData(wheel_type_);
-            motor_serial_->transmitCommand(mm);
+            wheel_type_ = MotorMessage::OPT_WHEEL_TYPE_THIN;
             break;
         default:
             RCLCPP_ERROR(logger_, "Illegal MCB wheel type 0x%x will not be set!", (int)new_wheel_type);
+            return;
     }
+    RCLCPP_INFO_ONCE(logger_, "setting MCB wheel type %d", (int)new_wheel_type);
+
+    MotorMessage mm;
+    mm.setRegister(MotorMessage::REG_WHEEL_TYPE);
+    mm.setType(MotorMessage::TYPE_WRITE);
+    mm.setData(wheel_type_);
+    motor_serial_->transmitCommand(mm);
 }
 
 void MCBInterface::setWheelGearRatio(double new_wheel_gear_ratio) {
@@ -760,6 +788,14 @@ double MCBInterface::getWheelTicksPerRadian() {
     return this->getWheelGearRatio() * TICKS_PER_RAD_FROM_GEAR_RATIO;
 }
 
+MotorMessage::HwOptions MCBInterface::getWheelType() const {
+    return wheel_type_;
+}
+
+MCBInterface::DriveType MCBInterface::getDriveType() const {
+    return drive_type_;
+}
+
 std::pair<double, double> MCBInterface::getMotorCurrents() {
     return {
         motor_diag_.motorCurrentLeft,
@@ -791,13 +827,22 @@ int MCBInterface::getPidControlWord() {
 }
 
 std::pair<double, double> MCBInterface::getWheelJointPositions() {
-    return {joints_[WheelJointLocation::LEFT].position,
-            joints_[WheelJointLocation::RIGHT].position};
+    return {joints[WheelJointLocation::LEFT].position,
+            joints[WheelJointLocation::RIGHT].position};
 }
 
-std::pair<double, double> MCBInterface::setWheelJointVelocities() {
-    return {joints_[WheelJointLocation::LEFT].velocity,
-            joints_[WheelJointLocation::RIGHT].velocity};
+std::pair<double, double> MCBInterface::getWheelPWMDrives() {
+    return {motor_diag_.motorPwmDriveLeft,
+            motor_diag_.motorPwmDriveRight};
+}
+
+void MCBInterface::setWheelJointVelocities(double leftWheelVelocity, double rightWheelVelocity) {
+    joints[WheelJointLocation::LEFT].velocity = leftWheelVelocity,
+    joints[WheelJointLocation::RIGHT].velocity = rightWheelVelocity;
+}
+
+MotorDiagnostics* MCBInterface::getBaseDiagnosticInterface() {
+    return &motor_diag_;
 }
 
 // ================================================================================================
