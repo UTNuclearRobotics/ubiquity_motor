@@ -91,9 +91,7 @@ using FirmwareParams = ubiquity_motor::Params::FirmwareParams;
 
     // Motor hardware interface
     void clearCommands();
-    void publishFirmwareInfo();
     bool areWheelSpeedsLower(double wheelSpeedRadPerSec);
-    void publishMotorState();
     double left_last_wheel_pos {0.0};
     double right_last_wheel_pos{0.0};
 
@@ -173,6 +171,13 @@ private:
     FRIEND_TEST(MotorHardwareTests, nonZeroWriteSpeedsOutputs);
     FRIEND_TEST(MotorHardwareTests, odomUpdatesPosition);
     FRIEND_TEST(MotorHardwareTests, odomUpdatesPositionMax);
+
+    // Status publishers
+    void publishMotorState();
+    void publishFirmwareInfo();
+    void publishBatteryState();
+    void publishEstopState();
+    void publishTickIntervals();
 };
 
 } // namespace ubiquity_motor

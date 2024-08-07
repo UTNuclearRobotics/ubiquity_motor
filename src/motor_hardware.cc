@@ -30,36 +30,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ubiquity_motor/motor_hardware.h>
 #include <ubiquity_motor/motor_message.h>
 #include <ubiquity_motor/motor_parameters.h>
-#include <boost/assign.hpp>
-#include <boost/math/special_functions/round.hpp>
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 
-// To access I2C we need some system includes
-#include <linux/i2c-dev.h>
-#include <linux/i2c.h>
-#include <fcntl.h>
-#include <sys/ioctl.h>
-#define  I2C_DEVICE  "/dev/i2c-1"     // This is specific to default Magni I2C port on host
-const static uint8_t  I2C_PCF8574_8BIT_ADDR = 0x40; // I2C addresses are 7 bits but often shown as 8-bit
-
-//#define SENSOR_DISTANCE 0.002478
-
-// TODO: Make HIGH_SPEED_RADIANS, WHEEL_VELOCITY_NEAR_ZERO and ODOM_4WD_ROTATION_SCALE  all ROS params
-#define HIGH_SPEED_RADIANS        (1.8)               // threshold to consider wheel turning 'very fast'
-#define WHEEL_VELOCITY_NEAR_ZERO  ((double)(0.08))
-#define ODOM_4WD_ROTATION_SCALE   ((double)(1.65))    // Used to correct for 4WD skid rotation error
-
-#define MOTOR_AMPS_PER_ADC_COUNT   ((double)(0.0238)) // 0.1V/Amp  2.44V=1024 count so 41.97 cnt/amp
-
-#define VELOCITY_READ_PER_SECOND   ((double)(10.0))   // read = ticks / (100 ms), so we scale of 10 for ticks/second
-#define LOWEST_FIRMWARE_VERSION 28
-
 namespace ubiquity_motor {
-
-// Debug verification use only
-int32_t  g_odomLeft  = 0;
-int32_t  g_odomRight = 0;
-int32_t  g_odomEvent = 0;
 
 //lead acid battery percentage levels for a single cell
 const static float SLA_AGM[11] = {
@@ -92,45 +65,27 @@ const static float LI_ION[11] = {
     4.20, // 100
 };
 
-// We sometimes need to know if we are rotating in place due to special ways of dealing with
-// A 4wd robot must skid to turn. This factor approximates the actual rotation done vs what
-// the wheel encoders have indicated.  This only applies if in 4WD mode
-double   g_odom4wdRotationScale = ODOM_4WD_ROTATION_SCALE;
-
-// 4WD robot chassis that has to use extensive torque to rotate in place and due to wheel slip has odom scale factor
-double   g_radiansLeft  = 0.0;
-double   g_radiansRight = 0.0;
-
-// This utility opens and reads 1 or more bytes from a device on an I2C bus
-// This method was taken on it's own from a big I2C class we may choose to use later
-static rclcpp::Logger static_logger = rclcpp::get_logger("MotorHardware");
-static int i2c_BufferRead(const char *i2cDevFile, uint8_t i2c8bitAddr,
-                          uint8_t *pBuffer, int16_t chipRegAddr, uint16_t NumBytesToRead);
-
 MotorHardware::MotorHardware() :
     nh_(std::make_shared<rclcpp::Node>("magni_motor_hardware")),
     params_listener_(nh_),
     mcb_interface_(fw_params),
     diag_updater(nh_)
 {
-    // Configure logger for static methods
-    static_logger = nh_->get_logger();
-
     // Load params from ROS parameter server
     all_params_ = params_listener_.get_params();
 
     rclcpp::QoS latching_qos(1);
     latching_qos.transient_local();
-    left_error_pub_ = nh_->create_publisher<std_msgs::msg::Int32>("left_error", 1);
-    right_error_pub_ = nh_->create_publisher<std_msgs::msg::Int32>("right_error", 1);
+    left_error_pub_          = nh_->create_publisher<std_msgs::msg::Int32>("left_error", 1);
+    right_error_pub_         = nh_->create_publisher<std_msgs::msg::Int32>("right_error", 1);
     left_tick_interval_pub_  = nh_->create_publisher<std_msgs::msg::Int32>("left_tick_interval", 1);
     right_tick_interval_pub_ = nh_->create_publisher<std_msgs::msg::Int32>("right_tick_interval", 1);
-    left_current_pub_ = nh_->create_publisher<std_msgs::msg::Float32>("left_current", 1);
-    right_current_pub_ = nh_->create_publisher<std_msgs::msg::Float32>("right_current", 1);
-    firmware_state_pub_ = nh_->create_publisher<std_msgs::msg::String>("firmware_version", latching_qos);
-    battery_state_pub_ = nh_->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 1);
-    motor_power_active_pub_ = nh_->create_publisher<std_msgs::msg::Bool>("motor_power_active", 1);
-    motor_state_pub_ = nh_->create_publisher<ubiquity_motor::msg::MotorState>("motor_state", 1);
+    left_current_pub_        = nh_->create_publisher<std_msgs::msg::Float32>("left_current", 1);
+    right_current_pub_       = nh_->create_publisher<std_msgs::msg::Float32>("right_current", 1);
+    firmware_state_pub_      = nh_->create_publisher<std_msgs::msg::String>("firmware_version", latching_qos);
+    battery_state_pub_       = nh_->create_publisher<sensor_msgs::msg::BatteryState>("battery_state", 1);
+    motor_power_active_pub_  = nh_->create_publisher<std_msgs::msg::Bool>("motor_power_active", 1);
+    motor_state_pub_         = nh_->create_publisher<ubiquity_motor::msg::MotorState>("motor_state", 1);
 
     system_control_sub_ = nh_->create_subscription<std_msgs::msg::String>(ROS_TOPIC_SYSTEM_CONTROL, 1000, 
         std::bind(&MotorHardware::SystemControlCallback, this, std::placeholders::_1));
@@ -162,6 +117,7 @@ MotorHardware::MotorHardware() :
 
 auto MotorHardware::on_init(const hardware_interface::HardwareInfo& info) -> CallbackReturn {
     if (SystemInterface::on_init(info) != CallbackReturn::SUCCESS) {
+        RCLCPP_ERROR(nh_->get_logger(), "System interface initialization failed, aborting");
         return hardware_interface::CallbackReturn::ERROR;
     }
 
@@ -223,7 +179,7 @@ auto MotorHardware::on_configure(
     [[maybe_unused]] const rclcpp_lifecycle::State& previous_state) -> CallbackReturn 
 {
     // Initialize communication with the MCB
-    RCLCPP_INFO(nh_->get_logger(), "Delay before MCB serial port initialization");
+    RCLCPP_INFO(nh_->get_logger(), "Initializing MCB serial port in 5 seconds");
     rclcpp::sleep_for(std::chrono::seconds(5));
     RCLCPP_INFO(nh_->get_logger(), "Initialize MCB serial port '%s' for %ld baud",
         serial_params.serial_port.c_str(), serial_params.baud_rate);
@@ -268,13 +224,10 @@ auto MotorHardware::on_configure(
     RCLCPP_INFO(nh_->get_logger(), "Clearing system events counters");
     if (mcb_interface_.firmware_version >= MIN_FW_SYSTEM_EVENTS) {
         // Start out with zero for system events
-        mcb_interface_.setSystemEvents(0);  // Clear entire system events register
-        mcb_interface_.system_events = 0;
-        rclcpp::sleep_for(mcb_status_period_);
+        mcb_interface_.resetSystemEvents();
     }
 
     // Send out the refreshable firmware parameters, most are the PID terms
-    // We must be sure num_fw_params is set to the modulo used in sendParams()
     RCLCPP_INFO(nh_->get_logger(), "Sending params to MCB");
     mcb_interface_.sendParams();
 
@@ -339,19 +292,24 @@ std::vector<hardware_interface::CommandInterface> MotorHardware::export_command_
 }
 
 hardware_interface::return_type MotorHardware::read(
-    [[maybe_unused]] const rclcpp::Time& time, [[maybe_unused]] const rclcpp::Duration& elapsed_time)
+    const rclcpp::Time& time, [[maybe_unused]] const rclcpp::Duration& elapsed_time)
 {
+    // Read in and process all serial packets that came from the MCB.
+    // The MotorSerial class has been receiving and queing packets from the MCB
+    mcb_interface_.readInputs();
+
     // Determine and set wheel velocities in rad/sec from hardware positions in rads
     const rclcpp::Duration joint_update_period = std::chrono::milliseconds(250);
     auto joint_elapsed_time = time - last_joint_time;
     if (joint_elapsed_time > joint_update_period) {
         last_joint_time = nh_->now();
         auto [left_wheel_pos, right_wheel_pos] = mcb_interface_.getWheelJointPositions();
+        left_last_wheel_pos  = left_wheel_pos;
+        right_last_wheel_pos = right_wheel_pos;
+
         double leftWheelVel  = (left_wheel_pos  - left_last_wheel_pos)  / joint_elapsed_time.seconds();
         double rightWheelVel = (right_wheel_pos - right_last_wheel_pos) / joint_elapsed_time.seconds();
         mcb_interface_.setWheelJointVelocities(leftWheelVel, rightWheelVel); // rad/sec
-        left_last_wheel_pos  = left_wheel_pos;
-        right_last_wheel_pos = right_wheel_pos;
 
         // Publish motor state at this time
         publishMotorState();
@@ -378,9 +336,20 @@ hardware_interface::return_type MotorHardware::read(
         }
     }
 
-    // Read in and process all serial packets that came from the MCB.
-    // The MotorSerial class has been receiving and queing packets from the MCB
-    mcb_interface_.readInputs();
+    // See if we are in a low battery voltage state
+    const std::string bat_status = (mcb_interface_.getBatteryVoltage() < fw_params.battery_voltage.low_level) ? "LOW!" : "OK";
+
+    // Post a status message for MCB state periodically. This may be nice to do more on as required
+    RCLCPP_INFO(nh_->get_logger(), "Battery = %5.2f volts [%s], MCB system events 0x%x,  PidCtrl 0x%x, WheelType '%s' DriveType '%s' GearRatio %6.3f",
+        mcb_interface_.getBatteryVoltage(), bat_status.c_str(), mcb_interface_.system_events, mcb_interface_.getPidControlWord(),
+        (mcb_interface_.getWheelType() == MotorMessage::OPT_WHEEL_TYPE_THIN) ? "thin" : "standard",
+        node_params.drive_type.c_str(), mcb_interface_.getWheelGearRatio());
+
+    // Publish data about the robot
+    publishFirmwareInfo();
+    publishBatteryState();
+    publishEstopState();
+    publishTickIntervals();
 
     return hardware_interface::return_type::OK;
 }
@@ -406,9 +375,8 @@ hardware_interface::return_type MotorHardware::write(
 
         // Must re-open serial port
         if (mcb_interface_.openPort()) {
-            mcb_interface_.setSystemEvents(0);  // Clear entire system events register
-            mcb_interface_.system_events = 0;
-            rclcpp::sleep_for(mcb_status_period_);
+            // Clear entire system events register
+            mcb_interface_.resetSystemEvents();
             
             // Setup MCB parameters that are defined by host parameters in most cases
             initMcbParameters();
@@ -416,6 +384,7 @@ hardware_interface::return_type MotorHardware::write(
         } else {
             // We do not have recovery from this situation and it seems not possible
             RCLCPP_ERROR(nh_->get_logger(), "ERROR in re-opening of the Motor controller!");
+            return hardware_interface::return_type::ERROR;
         }
     }
 
@@ -434,15 +403,6 @@ hardware_interface::return_type MotorHardware::write(
         mcb_interface_.requestSystemEvents();
         rclcpp::sleep_for(mcb_status_period_);
         last_sys_maint_time = nh_->now();
-
-        // See if we are in a low battery voltage state
-        const std::string batStatus = (mcb_interface_.getBatteryVoltage() < fw_params.battery_voltage.low_level) ? "LOW!" : "OK";
-
-        // Post a status message for MCB state periodically. This may be nice to do more on as required
-        RCLCPP_INFO(nh_->get_logger(), "Battery = %5.2f volts [%s], MCB system events 0x%x,  PidCtrl 0x%x, WheelType '%s' DriveType '%s' GearRatio %6.3f",
-            mcb_interface_.getBatteryVoltage(), batStatus.c_str(), mcb_interface_.system_events, mcb_interface_.getPidControlWord(),
-            (mcb_interface_.getWheelType() == MotorMessage::OPT_WHEEL_TYPE_THIN) ? "thin" : "standard",
-            node_params.drive_type.c_str(), mcb_interface_.getWheelGearRatio());
 
         // If we detect a power-on of MCB we should re-initialize MCB
         if ((mcb_interface_.system_events & MotorMessage::SYS_EVENT_POWERON) != 0) {
@@ -531,10 +491,6 @@ void MotorHardware::SystemControlCallback(std_msgs::msg::String::ConstSharedPtr 
      }
 }
 
-//  initMcbParameters()
-//
-//  Setup MCB parameters that are from host level options or settings
-//
 void MotorHardware::initMcbParameters()
 {
     // A full mcb initialization requires high level system overrides to be disabled
@@ -700,6 +656,18 @@ void MotorHardware::clearCommands() {
     std::fill(joint_velocity_commands_.begin(), joint_velocity_commands_.end(), 0.0);
 }
 
+
+// areWheelSpeedsLower()  Determine if all wheel joint speeds are below given threshold
+bool MotorHardware::areWheelSpeedsLower(double wheelSpeedRadPerSec) {
+    // This call pulls in speeds from the joints array maintained by other layers
+
+    const double left_radians  = joint_velocity_commands_[WheelJointLocation::Left];
+    const double right_radians = joint_velocity_commands_[WheelJointLocation::Right];
+
+    return ((std::abs(left_radians) < wheelSpeedRadPerSec) &&
+        (std::abs(right_radians) < wheelSpeedRadPerSec));
+}
+
 // Publish motor state conditions
 void MotorHardware::publishMotorState(void) {
     ubiquity_motor::msg::MotorState mstateMsg;
@@ -741,15 +709,46 @@ void MotorHardware::publishFirmwareInfo(){
     }
 }
 
-// areWheelSpeedsLower()  Determine if all wheel joint speeds are below given threshold
-bool MotorHardware::areWheelSpeedsLower(double wheelSpeedRadPerSec) {
-    // This call pulls in speeds from the joints array maintained by other layers
+void MotorHardware::publishBatteryState() {
+    sensor_msgs::msg::BatteryState bstate;
+    bstate.voltage = mcb_interface_.getBatteryVoltage();
+    bstate.current = std::numeric_limits<float>::quiet_NaN();
+    bstate.charge = std::numeric_limits<float>::quiet_NaN();
+    bstate.capacity = std::numeric_limits<float>::quiet_NaN();
+    bstate.design_capacity = std::numeric_limits<float>::quiet_NaN();
 
-    const double left_radians  = joint_velocity_commands_[WheelJointLocation::Left];
-    const double right_radians = joint_velocity_commands_[WheelJointLocation::Right];
-
-    return ((std::abs(left_radians) < wheelSpeedRadPerSec) &&
-        (std::abs(right_radians) < wheelSpeedRadPerSec));
+    // Hardcoded to a sealed lead acid 12S battery, but adjustable for future use
+    bstate.percentage = mcb_interface_.calculateBatteryPercentage(bstate.voltage, 12, SLA_AGM);
+    bstate.power_supply_status = sensor_msgs::msg::BatteryState::POWER_SUPPLY_STATUS_UNKNOWN;
+    bstate.power_supply_health = sensor_msgs::msg::BatteryState::POWER_SUPPLY_HEALTH_UNKNOWN;
+    bstate.power_supply_technology = sensor_msgs::msg::BatteryState::POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
+    battery_state_pub_->publish(bstate);
 }
+
+void MotorHardware::publishEstopState() {
+    std_msgs::msg::Bool estop_message;
+    estop_message.data = !mcb_interface_.getEstopState();
+    motor_power_active_pub_->publish(estop_message);
+}
+
+void MotorHardware::publishTickIntervals() {
+    // Publish the two wheel tic intervals
+    std_msgs::msg::Int32 leftInterval;
+    std_msgs::msg::Int32 rightInterval;
+
+    leftInterval.data  = mcb_interface_.leftTickSpacing;
+    rightInterval.data = mcb_interface_.rightTickSpacing;
+
+    // Only publish the tic intervals when wheels are moving
+    if (mcb_interface_.is_moving) {
+        left_tick_interval_pub_->publish(leftInterval);
+        right_tick_interval_pub_->publish(rightInterval);
+
+        RCLCPP_DEBUG(nh_->get_logger(), "Tic Ints M1 %d [0x%x]  M2 %d [0x%x]",  
+            mcb_interface_.leftTickSpacing, mcb_interface_.leftTickSpacing, 
+            mcb_interface_.rightTickSpacing, mcb_interface_.rightTickSpacing);
+    }
+}
+
 
 } // namespace ubiquity_motor

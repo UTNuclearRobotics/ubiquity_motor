@@ -218,6 +218,11 @@ public:
      */
     void setSystemEvents(int32_t system_events);
 
+    /**
+     * Clear all existing system events
+     */
+    void resetSystemEvents();
+
     // /**
     //  * Set internal parameters (deprecated)
     //  */
@@ -361,6 +366,9 @@ public:
 
     // Flag to indicate if wheel slip nulling is enabled
     bool wheel_slip_nulling{false};
+
+    // Flag to indicate if the robot is moving
+    bool is_moving{false};
 
     // The number of encode ticks for a single radian of wheel rotation
     double ticks_per_radian{TICKS_PER_RADIAN_DEFAULT};

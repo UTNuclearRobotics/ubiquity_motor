@@ -369,21 +369,7 @@ void MCBInterface::handleReadEncodeTimeInc(int32_t data) {
     if ((tickCap > 0) && (leftTickSpacing  > tickCap)) { leftTickSpacing  = tickCap; }
     if ((tickCap > 0) && (rightTickSpacing > tickCap)) { rightTickSpacing = tickCap; }
 
-    // Publish the two wheel tic intervals
-    // std_msgs::msg::Int32 leftInterval;
-    // std_msgs::msg::Int32 rightInterval;
-
-    // leftInterval.data  = leftTickSpacing;
-    // rightInterval.data = rightTickSpacing;
-
-    // Only publish the tic intervals when wheels are moving
-    if (data > 1) {     // Optionally show the intervals for debug
-        // left_tick_interval_pub_->publish(leftInterval);
-        // right_tick_interval_pub_->publish(rightInterval);
-
-        RCLCPP_DEBUG(logger_, "Tic Ints M1 %d [0x%x]  M2 %d [0x%x]",  
-            leftTickSpacing, leftTickSpacing, rightTickSpacing, rightTickSpacing);
-    }
+    this->is_moving = data > 1;
 }
 
 // ================================================================================================
@@ -653,6 +639,12 @@ void MCBInterface::setSystemEvents(int32_t system_events) {
     mm.setType(MotorMessage::TYPE_WRITE);
     mm.setData(system_events);
     motor_serial_->transmitCommand(mm);
+}
+
+void MCBInterface::resetSystemEvents() {
+    setSystemEvents(0);  // Clear entire system events register
+    system_events = 0;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
 void MCBInterface::sendParams() {
