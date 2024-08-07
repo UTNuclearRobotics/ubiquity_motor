@@ -60,7 +60,7 @@ int MotorSerial::transmitCommands(const std::vector<MotorMessage>& commands) {
         RCLCPP_DEBUG(logger_, "out %02x %02x %02x %02x %02x %02x %02x %02x", out[0], out[1],
                   out[2], out[3], out[4], out[5], out[6], out[7]);
         motors.write(out.data(), out.size());
-        boost::this_thread::sleep(boost::posix_time::milliseconds(2));
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     return 0;
 }
