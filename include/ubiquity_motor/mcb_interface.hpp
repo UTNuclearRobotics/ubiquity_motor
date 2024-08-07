@@ -39,11 +39,6 @@ public:
     void readInputs();
 
     /**
-     * Passes the stored joint velocity commands to the writeSpeedsInRadians function
-     */
-    void writeSpeeds();
-
-    /**
      * Take in radians per sec for wheels and send in message to controller.
      * 
      * A direct write speeds that allows caller setting speeds in radians
@@ -54,10 +49,10 @@ public:
      */
     void writeSpeedsInRadians(double left_radians, double right_radians);
 
-    /**
-     * Publish the firmware version and optional date to ROS
-     */
-    void publishFirmwareInfo();
+    // /**
+    //  * Publish the firmware version and optional date to ROS
+    //  */
+    // void publishFirmwareInfo();
 
     /**
      * Determine approximate battery charge percentage.
@@ -74,12 +69,12 @@ public:
      */
     float calculateBatteryPercentage(float voltage, int cells, const float* type);
 
-    /**
-     * Determine if all wheel joint speeds are below given threshold
-     * 
-     * @param wheelSpeedRadPerSec   threshold value
-     */
-    bool areWheelSpeedsLower(double wheelSpeedRadPerSec);
+    // /**
+    //  * Determine if all wheel joint speeds are below given threshold
+    //  * 
+    //  * @param wheelSpeedRadPerSec   threshold value
+    //  */
+    // bool areWheelSpeedsLower(double wheelSpeedRadPerSec);
 
     /**
      * Request the firmware version from the MCB. 
@@ -97,9 +92,16 @@ public:
     void requestFirmwareDate();
 
     /**
-     * Set internal parameters (deprecated)
+     * Request the MCB system event register
+     * 
+     * @note This must be followed by a readInputs() command to see the response
      */
-    [[deprecated]] void setParams(ubiquity_motor::Params::FirmwareParams firmware_params);
+    void requestSystemEvents();
+
+    // /**
+    //  * Set internal parameters (deprecated)
+    //  */
+    // [[deprecated]] void setParams(ubiquity_motor::Params::FirmwareParams firmware_params);
 
     /**
      * Send a single parameter from FirmwareParams to the MCB. This must be called
@@ -261,13 +263,6 @@ public:
     void setOptionSwitchReg(int32_t option_switch);
 
     /**
-     * Request the MCB system event register
-     * 
-     * @note This must be followed by a readInputs() command to see the response
-     */
-    void requestSystemEvents();
-
-    /**
      * Setup the controller board system event register or clear bits in the register
      */
     void setSystemEvents(int32_t system_events);
@@ -303,9 +298,6 @@ public:
 
     // Binary envoded firmware according to the MotorMessage::HwOptions enum
     int firmware_options{0};
-
-    // Total number of firmware parameters. This is used for sendParams as modulo count
-    int num_fw_params;  
 
     // Version number of the robot MCB
     int hardware_version;
@@ -363,6 +355,7 @@ private:
     // ROS logger
     rclcpp::Logger logger_{rclcpp::get_logger("MCBInterface")};
     Params::FirmwareParams* fw_params_ = nullptr;
+    Params::FirmwareParams prev_fw_params_;
 
     // Used for keeping track of diagnostics
     MotorDiagnostics motor_diag_;

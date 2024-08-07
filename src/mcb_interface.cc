@@ -6,6 +6,9 @@ namespace ubiquity_motor {
 static constexpr double WHEEL_VELOCITY_NEAR_ZERO = 0.08;
 static constexpr double ODOM_4WD_ROTATION_SCALE  = 1.65;
 static constexpr double MOTOR_AMPS_PER_ADC_COUNT = 0.0238; // 0.1V/Amp  2.44V=1024 count so 41.97 cnt/amp
+static constexpr double VELOCITY_READ_PER_SECOND = 10.0;   // read = ticks / (100 ms), so we scale of 10 for ticks/second
+static constexpr double HIGH_SPEED_RADIANS       = 1.8;    // threshold to consider wheel turning 'very fast'
+
 
 void MCBInterface::closePort() {
     if (motor_serial_)
@@ -345,6 +348,190 @@ void MCBInterface::handleReadEncodeTimeInc(int32_t data) {
 
         RCLCPP_DEBUG(logger_, "Tic Ints M1 %d [0x%x]  M2 %d [0x%x]",  
             leftTickSpacing, leftTickSpacing, rightTickSpacing, rightTickSpacing);
+    }
+}
+
+// ================================================================================================
+// ================================================================================================
+
+void MCBInterface::writeSpeedsInRadians(double left_radians, double right_radians) {
+    MotorMessage both;
+    both.setRegister(MotorMessage::REG_BOTH_SPEED_SET);
+    both.setType(MotorMessage::TYPE_WRITE);
+
+    // We are going to implement a message when robot is moving very fast or rotating very fast
+    if (((left_radians / VELOCITY_READ_PER_SECOND)  > HIGH_SPEED_RADIANS) || 
+        ((right_radians / VELOCITY_READ_PER_SECOND) > HIGH_SPEED_RADIANS)) {
+        RCLCPP_WARN(logger_, "Wheel rotation at high radians per sec.  Left %f rad/s Right %f rad/s",
+            left_radians, right_radians);
+    }
+
+    int16_t left_speed  = calculateSpeedFromRadians(left_radians);
+    int16_t right_speed = calculateSpeedFromRadians(right_radians);
+
+    // The masking with 0x0000ffff is necessary for handling -ve numbers
+    int32_t data = (left_speed << 16) | (right_speed & 0x0000ffff);
+    both.setData(data);
+    motor_serial_->transmitCommand(both);
+
+    // std_msgs::msg::Int32 smsg;
+    // smsg.data = left_speed;
+
+
+    // RCLCPP_ERROR(nh_->get_logger(), "velocity_command %f rad/s %f rad/s",
+    // joints_[WheelJointLocation::Left].velocity_command, joints_[WheelJointLocation::Right].velocity_command);
+    // joints_[LEFT_WHEEL_JOINT].velocity_command, joints_[RIGHT_WHEEL_JOINT].velocity_command);
+    // RCLCPP_ERROR(nh_->get_logger(), "SPEEDS %d %d", left.getData(), right.getData());
+}
+
+float MCBInterface::calculateBatteryPercentage(float voltage, int cells, const float* type) {
+    float onecell = voltage / (float)cells;
+
+    if(onecell >= type[10])
+        return 1.0;
+    else if(onecell <= type[0])
+        return 0.0;
+
+    int upper = 0;
+    int lower = 0;
+
+    for(int i = 0; i < 11; i++){
+        if(onecell > type[i]){
+            lower = i;
+        }else{
+            upper = i;
+            break;
+        }
+    }
+
+    float deltavoltage = type[upper] - type[lower];
+    float between_percent = (onecell - type[lower]) / deltavoltage;
+
+    return (float)lower * 0.1 + between_percent * 0.1;
+}
+
+void MCBInterface::requestFirmwareVersion() {
+    MotorMessage fw_version_msg;
+    fw_version_msg.setRegister(MotorMessage::REG_FIRMWARE_VERSION);
+    fw_version_msg.setType(MotorMessage::TYPE_READ);
+    fw_version_msg.setData(0);
+    motor_serial_->transmitCommand(fw_version_msg);
+}
+
+void MCBInterface::requestFirmwareDate() {
+    MotorMessage fw_date_msg;
+    fw_date_msg.setRegister(MotorMessage::REG_FIRMWARE_DATE);
+    fw_date_msg.setType(MotorMessage::TYPE_READ);
+    fw_date_msg.setData(0);
+    motor_serial_->transmitCommand(fw_date_msg);
+}
+
+void MCBInterface::requestSystemEvents() {
+    MotorMessage sys_event_msg;
+    sys_event_msg.setRegister(MotorMessage::REG_SYSTEM_EVENTS);
+    sys_event_msg.setType(MotorMessage::TYPE_READ);
+    sys_event_msg.setData(0);
+    motor_serial_->transmitCommand(sys_event_msg);
+}
+
+void MCBInterface::sendParams() {
+    std::vector<MotorMessage> commands;
+
+    if (fw_params_->pid.proportional != prev_fw_params_.pid.proportional) {
+        RCLCPP_WARN(logger_, "Setting PidParam P to %ld", fw_params_->pid.proportional);
+        prev_fw_params_.pid.proportional = fw_params_->pid.proportional;
+        motor_diag_.fw_pid_proportional = fw_params_->pid.proportional;
+        MotorMessage p;
+        p.setRegister(MotorMessage::REG_PARAM_P);
+        p.setType(MotorMessage::TYPE_WRITE);
+        p.setData(fw_params_->pid.proportional);
+        commands.push_back(p);
+    }
+
+    if (fw_params_->pid.integral != prev_fw_params_.pid.integral) {
+        RCLCPP_WARN(logger_, "Setting PidParam I to %ld", fw_params_->pid.integral);
+        prev_fw_params_.pid.integral = fw_params_->pid.integral;
+        motor_diag_.fw_pid_integral = fw_params_->pid.integral;
+        MotorMessage i;
+        i.setRegister(MotorMessage::REG_PARAM_I);
+        i.setType(MotorMessage::TYPE_WRITE);
+        i.setData(fw_params_->pid.integral);
+        commands.push_back(i);
+    }
+
+    if (fw_params_->pid.derivative != prev_fw_params_.pid.derivative) {
+        RCLCPP_WARN(logger_, "Setting PidParam D to %ld", fw_params_->pid.derivative);
+        prev_fw_params_.pid.derivative = fw_params_->pid.derivative;
+        motor_diag_.fw_pid_derivative = fw_params_->pid.derivative;
+        MotorMessage d;
+        d.setRegister(MotorMessage::REG_PARAM_D);
+        d.setType(MotorMessage::TYPE_WRITE);
+        d.setData(fw_params_->pid.derivative);
+        commands.push_back(d);
+    }
+
+    if ((motor_diag_.firmware_version >= MIN_FW_PID_V_TERM) &&
+        fw_params_->pid.velocity != prev_fw_params_.pid.velocity) {
+        RCLCPP_WARN(logger_, "Setting PidParam V to %f", fw_params_->pid.velocity);
+        prev_fw_params_.pid.velocity = fw_params_->pid.velocity;
+        motor_diag_.fw_pid_velocity = fw_params_->pid.velocity;
+        MotorMessage v;
+        v.setRegister(MotorMessage::REG_PARAM_V);
+        v.setType(MotorMessage::TYPE_WRITE);
+        v.setData(fw_params_->pid.velocity);
+        commands.push_back(v);
+    }
+
+    if (fw_params_->pid.denominator != prev_fw_params_.pid.denominator) {
+        RCLCPP_WARN(logger_, "Setting PidParam Denominator to %ld", fw_params_->pid.denominator);
+        prev_fw_params_.pid.denominator = fw_params_->pid.denominator;
+        motor_diag_.fw_pid_denominator = fw_params_->pid.denominator;
+        MotorMessage denominator;
+        denominator.setRegister(MotorMessage::REG_PARAM_C);
+        denominator.setType(MotorMessage::TYPE_WRITE);
+        denominator.setData(fw_params_->pid.denominator);
+        commands.push_back(denominator);
+    }
+
+    if (fw_params_->pid.moving_buffer_size !=
+            prev_fw_params_.pid.moving_buffer_size) {
+        RCLCPP_WARN(logger_, "Setting PidParam D window to %ld", fw_params_->pid.moving_buffer_size);
+        prev_fw_params_.pid.moving_buffer_size =
+            fw_params_->pid.moving_buffer_size;
+        motor_diag_.fw_pid_moving_buffer_size = fw_params_->pid.moving_buffer_size;
+        MotorMessage winsize;
+        winsize.setRegister(MotorMessage::REG_MOVING_BUF_SIZE);
+        winsize.setType(MotorMessage::TYPE_WRITE);
+        winsize.setData(fw_params_->pid.moving_buffer_size);
+        commands.push_back(winsize);
+    }
+
+    if (fw_params_->max_pwm != prev_fw_params_.max_pwm) {
+        RCLCPP_WARN(logger_, "Setting PidParam max_pwm to %ld", fw_params_->max_pwm);
+        prev_fw_params_.max_pwm = fw_params_->max_pwm;
+        motor_diag_.fw_max_pwm = fw_params_->max_pwm;
+        MotorMessage maxpwm;
+        maxpwm.setRegister(MotorMessage::REG_MAX_PWM);
+        maxpwm.setType(MotorMessage::TYPE_WRITE);
+        maxpwm.setData(fw_params_->max_pwm);
+        commands.push_back(maxpwm);
+    }
+
+    if (fw_params_->pid.control != prev_fw_params_.pid.control) {
+        RCLCPP_WARN(logger_, "Setting PidParam pid_control to %ld", fw_params_->pid.control);
+        prev_fw_params_.pid.control = fw_params_->pid.control;
+        motor_diag_.fw_pid_control = fw_params_->pid.control;
+        MotorMessage mmsg;
+        mmsg.setRegister(MotorMessage::REG_PID_CONTROL);
+        mmsg.setType(MotorMessage::TYPE_WRITE);
+        mmsg.setData(fw_params_->pid.control);
+        commands.push_back(mmsg);
+    }
+
+    // Only send one register at a time to avoid overwhelming serial comms
+    for (const MotorMessage& command : commands) {
+        motor_serial_->transmitCommand(command);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 }
 
