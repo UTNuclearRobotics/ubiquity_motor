@@ -2,12 +2,17 @@
 #define MCBINTERFACE_HPP
 
 #include <rclcpp/node.hpp>
+#include <rclcpp/logging.hpp>
 
 #include "motor_parameters.hpp"
+#include "ubiquity_motor/motor_serial.h"
+#include "ubiquity_motor/motor_diagnostics.hpp"
 
 // The gear ratio defaults for wheels shipped with Magni
-static constexpr double WHEEL_GEAR_RATIO_1 = 4.294;   // Default original motor gear ratio for Magni
-static constexpr double WHEEL_GEAR_RATIO_2 = 5.170;   // 2nd version standard Magni wheels gear ratio
+static constexpr double WHEEL_GEAR_RATIO_1 = 4.294;         // Default original motor gear ratio for Magni
+static constexpr double WHEEL_GEAR_RATIO_2 = 5.170;         // 2nd version standard Magni wheels gear ratio
+static constexpr double TICKS_PER_RADIAN_DEFAULT = 41.004;  // For runtime use  getWheelGearRatio() * TICKS_PER_RAD_FROM_GEAR_RATIO    
+
 #define WHEEL_GEAR_RATIO_DEFAULT WHEEL_GEAR_RATIO_1
 
 class MCBInterface : public rclcpp::Node {
@@ -23,12 +28,6 @@ public:
      * After we have given up the MCB we open serial port again using current instance of Serial
      */
     bool openPort();
-
-    /**
-     * Reset robot command to zero. Note that this does not send any commands to the MCB, it
-     * only affects the local state
-     */
-    void clearCommands();
 
     /**
      * Receive serial and act on the response from motor controller.
@@ -345,9 +344,60 @@ public:
     // Flag to indicate if wheel slip nulling is enabled
     bool wheel_slip_nulling{false};
 
+    // The number of encode ticks for a single radian of wheel rotation
+    double ticks_per_radian{TICKS_PER_RADIAN_DEFAULT};
+
 private:
+    // The serial interface with the MCB
+    std::unique_ptr<MotorSerial> motor_serial_;
+
+    // ROS logger
+    rclcpp::Logger logger_{rclcpp::get_logger("MCBInterface")};
+
+    // Used for keeping track of diagnostics
+    MotorDiagnostics motor_diag_;
+
+    // MessageTypes enum for refering to motor or wheel number
+    enum MotorOrWheelNumber {
+        Motor_M1 = 0b01,
+        Motor_M2 = 0b10
+    };
+
+    // MessageTypes enum in class to avoid global namespace pollution
+    enum WheelJointLocation {
+        LEFT  = 0,
+        RIGHT = 1
+    };
+
+    enum DriveType {
+        DRIVER_TYPE_STANDARD = 0,
+        DRIVER_TYPE_4WD      = 1
+    } drive_type_;
+
+    struct Joint {
+        double position{};         // rad
+        double velocity{};         // rad/s
+        double effort{};           // Nm
+
+        int16_t velocity_error{};  
+    };
+    std::array<Joint, 2> joints_;
+
     int16_t calculateSpeedFromRadians(double radians);
     double calculateRadiansFromTicks(int16_t ticks);
+
+    // Input handle callbacks
+    void handleReadSystemEvents(int32_t data);
+    void handleReadFirmwareVersion(int32_t data);
+    void handleReadFirmwareDate(int32_t data);
+    void handleReadOdom(int32_t data);
+    void handleReadSpeedError(int32_t data);
+    void handleReadPWM(int32_t data);
+    void handleReadLeftCurrent(int32_t data);
+    void handleReadRightCurrent(int32_t data);
+    void handleReadFirmwareOptions(int32_t data);
+    void handleReadLimitReached(int32_t data);
+    void handleReadBatteryVoltage(int32_t data);
 };
 
 #endif
