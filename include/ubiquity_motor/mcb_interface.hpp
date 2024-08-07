@@ -8,6 +8,8 @@
 #include "ubiquity_motor/motor_serial.h"
 #include "ubiquity_motor/motor_diagnostics.hpp"
 
+namespace ubiquity_motor {
+
 // The gear ratio defaults for wheels shipped with Magni
 static constexpr double WHEEL_GEAR_RATIO_1 = 4.294;         // Default original motor gear ratio for Magni
 static constexpr double WHEEL_GEAR_RATIO_2 = 5.170;         // 2nd version standard Magni wheels gear ratio
@@ -330,7 +332,7 @@ public:
     double wheel_gear_ratio{WHEEL_GEAR_RATIO_DEFAULT};
 
     // Wether the robot is using standard drive or 4-wheel drive
-    int drive_type;
+    int drive_type{DRIVER_TYPE_STANDARD};
 
     // Counter for the number of times the wheel nulling method is called
     int wheel_slip_events{0};
@@ -344,8 +346,15 @@ public:
     // Flag to indicate if wheel slip nulling is enabled
     bool wheel_slip_nulling{false};
 
+    // Flag to indicate if the motor power is off
+    bool estop_motor_power_off{false};
+
     // The number of encode ticks for a single radian of wheel rotation
     double ticks_per_radian{TICKS_PER_RADIAN_DEFAULT};
+
+    // The time spacing between encoder ticks
+    uint16_t leftTickSpacing{0};
+    uint16_t rightTickSpacing{0};
 
 private:
     // The serial interface with the MCB
@@ -353,6 +362,7 @@ private:
 
     // ROS logger
     rclcpp::Logger logger_{rclcpp::get_logger("MCBInterface")};
+    Params::FirmwareParams* fw_params_ = nullptr;
 
     // Used for keeping track of diagnostics
     MotorDiagnostics motor_diag_;
@@ -398,6 +408,10 @@ private:
     void handleReadFirmwareOptions(int32_t data);
     void handleReadLimitReached(int32_t data);
     void handleReadBatteryVoltage(int32_t data);
+    void handleReadMotorPowerActive(int32_t data);
+    void handleReadEncodeTimeInc(int32_t data);
 };
+
+} // namespace ubiquity_motor
 
 #endif

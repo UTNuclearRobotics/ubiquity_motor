@@ -1,5 +1,7 @@
 #include "ubiquity_motor/mcb_interface.hpp"
 
+namespace ubiquity_motor {
+
 #define LOWEST_FIRMWARE_VERSION 28
 static constexpr double WHEEL_VELOCITY_NEAR_ZERO = 0.08;
 static constexpr double ODOM_4WD_ROTATION_SCALE  = 1.65;
@@ -72,57 +74,20 @@ void MCBInterface::readInputs() {
                     break;
 
                 case MotorMessage::REG_BATTERY_VOLTAGE: {
-                    int32_t data = mm.getData();
-                    
-                    break;
-                }
-                case MotorMessage::REG_MOT_PWR_ACTIVE: {   // Starting with rev 5.0 board we can see power state
-                    int32_t data = mm.getData();
-
-                    if (data & MotorMessage::MOT_POW_ACTIVE) {
-                        if (estop_motor_power_off == true) {
-                            RCLCPP_WARN(logger_, "Motor power has gone from inactive to active. Most likely from ESTOP switch");
-                        }
-                        estop_motor_power_off = false;
-                    } else {
-                        if (estop_motor_power_off == false) {
-                            RCLCPP_WARN(logger_, "Motor power has gone inactive. Most likely from ESTOP switch active");
-                        }
-                        estop_motor_power_off = true;
-                    }
-                    motor_diag_.estop_motor_power_off = estop_motor_power_off;  // A copy for diagnostics topic
-
-                    std_msgs::msg::Bool estop_message;
-                    estop_message.data = !estop_motor_power_off;
-                    motor_power_active_pub_->publish(estop_message);
+                    handleReadBatteryVoltage(mm.getData());
                     break;
                 }
 
-                case MotorMessage::REG_TINT_BOTH_WHLS: {   // As of v41 show time between wheel enc edges
-                    int32_t data = mm.getData();
-                    uint16_t leftTickSpacing = (data >> 16) & 0xffff;
-                    uint16_t rightTickSpacing = data & 0xffff;
-                    uint16_t tickCap = 0;    // We can cap the max value if desired
-
-                    if ((tickCap > 0) && (leftTickSpacing  > tickCap)) { leftTickSpacing  = tickCap; }
-                    if ((tickCap > 0) && (rightTickSpacing > tickCap)) { rightTickSpacing = tickCap; }
-
-                    // Publish the two wheel tic intervals
-                    std_msgs::msg::Int32 leftInterval;
-                    std_msgs::msg::Int32 rightInterval;
-
-                    leftInterval.data  = leftTickSpacing;
-                    rightInterval.data = rightTickSpacing;
-
-                    // Only publish the tic intervals when wheels are moving
-                    if (data > 1) {     // Optionally show the intervals for debug
-                        left_tick_interval_pub_->publish(leftInterval);
-                        right_tick_interval_pub_->publish(rightInterval);
-
-                        RCLCPP_DEBUG(logger_, "Tic Ints M1 %d [0x%x]  M2 %d [0x%x]",  
-                            leftTickSpacing, leftTickSpacing, rightTickSpacing, rightTickSpacing);
-                    }
+                case MotorMessage::REG_MOT_PWR_ACTIVE: {
+                    handleReadMotorPowerActive(mm.getData());
+                    break;
                 }
+
+                case MotorMessage::REG_TINT_BOTH_WHLS: { 
+                   handleReadEncodeTimeInc(mm.getData());
+                   break;
+                }
+
                 default:
                     break;
             }
@@ -147,7 +112,7 @@ void MCBInterface::handleReadFirmwareVersion(int32_t data) {
         firmware_version = data;
         motor_diag_.firmware_version = firmware_version;
     }
-    publishFirmwareInfo();
+    // publishFirmwareInfo();
 }
 
 void MCBInterface::handleReadFirmwareDate(int32_t data) {
@@ -156,7 +121,7 @@ void MCBInterface::handleReadFirmwareDate(int32_t data) {
     firmware_date = data;
     motor_diag_.firmware_date = firmware_date;
 
-    publishFirmwareInfo();
+    // publishFirmwareInfo();
 }
 
 void MCBInterface::handleReadOdom(int32_t data) {
@@ -314,8 +279,8 @@ void MCBInterface::handleReadLimitReached(int32_t data) {
 
 void MCBInterface::handleReadBatteryVoltage(int32_t data) {
 
-    const float voltage = (float)data * fw_params.battery_voltage.multiplier +
-                    fw_params.battery_voltage.offset;
+    const float voltage = (float)data * fw_params_->battery_voltage.multiplier +
+                    fw_params_->battery_voltage.offset;
                     
     // sensor_msgs::msg::BatteryState bstate;
     // bstate.voltage = (float)data * fw_params.battery_voltage.multiplier +
@@ -332,7 +297,55 @@ void MCBInterface::handleReadBatteryVoltage(int32_t data) {
     // bstate.power_supply_technology = sensor_msgs::msg::BatteryState::POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
     // battery_state_pub_->publish(bstate);
 
-    // motor_diag_.battery_voltage = bstate.voltage;
-    // motor_diag_.battery_voltage_low_level = MotorHardware::fw_params.battery_voltage.low_level;
-    // motor_diag_.battery_voltage_critical = MotorHardware::fw_params.battery_voltage.critical;
+    motor_diag_.battery_voltage = voltage;
+    motor_diag_.battery_voltage_low_level = fw_params_->battery_voltage.low_level;
+    motor_diag_.battery_voltage_critical = fw_params_->battery_voltage.critical;
 }
+
+void MCBInterface::handleReadMotorPowerActive(int32_t data) {
+    // Starting with rev 5.0 board we can see power state
+    if (data & MotorMessage::MOT_POW_ACTIVE) {
+        if (estop_motor_power_off == true) {
+            RCLCPP_WARN(logger_, "Motor power has gone from inactive to active. Most likely from ESTOP switch");
+        }
+        estop_motor_power_off = false;
+    } else {
+        if (estop_motor_power_off == false) {
+            RCLCPP_WARN(logger_, "Motor power has gone inactive. Most likely from ESTOP switch active");
+        }
+        estop_motor_power_off = true;
+    }
+    motor_diag_.estop_motor_power_off = estop_motor_power_off;  // A copy for diagnostics topic
+
+    // std_msgs::msg::Bool estop_message;
+    // estop_message.data = !estop_motor_power_off;
+    // motor_power_active_pub_->publish(estop_message);
+}
+
+void MCBInterface::handleReadEncodeTimeInc(int32_t data) {
+    // As of v41 show time between wheel enc edges
+    leftTickSpacing = (data >> 16) & 0xffff;
+    rightTickSpacing = data & 0xffff;
+    uint16_t tickCap = 0;    // We can cap the max value if desired
+
+    if ((tickCap > 0) && (leftTickSpacing  > tickCap)) { leftTickSpacing  = tickCap; }
+    if ((tickCap > 0) && (rightTickSpacing > tickCap)) { rightTickSpacing = tickCap; }
+
+    // Publish the two wheel tic intervals
+    // std_msgs::msg::Int32 leftInterval;
+    // std_msgs::msg::Int32 rightInterval;
+
+    // leftInterval.data  = leftTickSpacing;
+    // rightInterval.data = rightTickSpacing;
+
+    // Only publish the tic intervals when wheels are moving
+    if (data > 1) {     // Optionally show the intervals for debug
+        // left_tick_interval_pub_->publish(leftInterval);
+        // right_tick_interval_pub_->publish(rightInterval);
+
+        RCLCPP_DEBUG(logger_, "Tic Ints M1 %d [0x%x]  M2 %d [0x%x]",  
+            leftTickSpacing, leftTickSpacing, rightTickSpacing, rightTickSpacing);
+    }
+}
+
+} // namespace ubiquity_motor
