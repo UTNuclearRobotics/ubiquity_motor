@@ -59,7 +59,8 @@ ubiquity_motor:
 
       control: {
         type: int,
-        description: PID control word
+        description: PID control word,
+        default_value: 0
       }
 
     controller_board_version: {
@@ -94,7 +95,7 @@ ubiquity_motor:
       description: Setup the controller board maximum settable motor reverse speed,
       default_value: -80,
       validation: {
-        gt_eq<>: 0
+        lt_eq<>: 0
       }
     }
 

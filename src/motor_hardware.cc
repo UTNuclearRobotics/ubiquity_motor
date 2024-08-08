@@ -750,5 +750,7 @@ void MotorHardware::publishTickIntervals() {
     }
 }
 
-
 } // namespace ubiquity_motor
+
+#include "pluginlib/class_list_macros.hpp"
+PLUGINLIB_EXPORT_CLASS(ubiquity_motor::MotorHardware, hardware_interface::SystemInterface)

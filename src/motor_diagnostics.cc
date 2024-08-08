@@ -5,6 +5,19 @@
 using diagnostic_updater::DiagnosticStatusWrapper;
 using diagnostic_msgs::msg::DiagnosticStatus;
 
+void MotorDiagnostics::firmware_status(diagnostic_updater::DiagnosticStatusWrapper &stat) {
+    stat.add("Firmware Version", firmware_version);
+    if (firmware_version == 0) {
+        stat.summary(DiagnosticStatus::ERROR, "No firmware version reported. Power may be off.");
+    }
+    else if (firmware_version < MIN_FW_RECOMMENDED) {
+        stat.summary(DiagnosticStatus::WARN, "Firmware is older than recommended! You must update firmware!");
+    }
+    else {
+        stat.summary(DiagnosticStatus::OK, "Firmware version is OK");
+    }
+}
+
 void MotorDiagnostics::battery_status(DiagnosticStatusWrapper &stat) {
     stat.add("Battery Voltage", battery_voltage);
     if (battery_voltage < battery_voltage_low_level) {
@@ -77,3 +90,49 @@ void MotorDiagnostics::firmware_options_status(DiagnosticStatusWrapper &stat) {
     }
     stat.summary(DiagnosticStatusWrapper::OK, option_descriptions);
 }
+
+void MotorDiagnostics::limit_status(DiagnosticStatusWrapper &stat) {
+    stat.summary(DiagnosticStatus::OK, "Limits reached:");
+    if (left_pwm_limit) {
+        stat.mergeSummary(DiagnosticStatusWrapper::ERROR, " left pwm,");
+        left_pwm_limit = false;
+    }
+    if (right_pwm_limit) {
+        stat.mergeSummary(DiagnosticStatusWrapper::ERROR, " right pwm,");
+        right_pwm_limit = false;
+    }
+    if (left_integral_limit) {
+        stat.mergeSummary(DiagnosticStatusWrapper::WARN, " left integral,");
+        left_integral_limit = false;
+    }
+    if (right_integral_limit) {
+        stat.mergeSummary(DiagnosticStatusWrapper::WARN, " right integral,");
+        right_integral_limit = false;
+    }
+    if (left_max_speed_limit) {
+        stat.mergeSummary(DiagnosticStatusWrapper::WARN, " left speed,");
+        left_max_speed_limit = false;
+    }
+    if (right_max_speed_limit) {
+        stat.mergeSummary(DiagnosticStatusWrapper::WARN, " right speed,");
+        right_max_speed_limit = false;
+    }
+    if (param_limit_in_firmware) {
+        // A parameter was sent to firmware that was out of limits for the firmware register
+        stat.mergeSummary(DiagnosticStatusWrapper::WARN, " firmware limit,");
+        param_limit_in_firmware = false;
+    }
+}
+
+void MotorDiagnostics::firmware_date_status(diagnostic_updater::DiagnosticStatusWrapper &stat) {
+    // Only output status if the firmware daycode is supported
+    if (firmware_version >= MIN_FW_FIRMWARE_DATE) {
+        std::stringstream stream;
+        stream << std::hex << firmware_date;
+        std::string daycode(stream.str());
+
+        stat.add("Firmware Date", daycode);
+        stat.summary(DiagnosticStatus::OK, "Firmware daycode format is YYYYMMDD");
+    }
+}
+
