@@ -4,6 +4,7 @@
 #include <boost/assign.hpp>
 #include <boost/math/special_functions/round.hpp>
 #include <chrono>
+#include <string>
 #include "pluginlib/class_list_macros.hpp"
 
 
@@ -175,9 +176,6 @@ MotorHardware::MotorHardware()
 
 hardware_interface::CallbackReturn MotorHardware::on_configure(const rclcpp_lifecycle::State & previous_state)
 {
-
-    RCLCPP_INFO(logger, "on_configure");
-
     node = rclcpp::Node::make_shared("motor_node");
 
     // For motor tunning and other uses we publish details for each wheel
@@ -302,6 +300,12 @@ MotorHardware::~MotorHardware() {
         }
 }
 
+inline bool ends_with(std::string const & value, std::string const & ending)
+{
+    if (ending.size() > value.size()) return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
+
 hardware_interface::CallbackReturn MotorHardware::on_init(const hardware_interface::HardwareInfo &info) {
     // Initialize joint names and other variables
     if (info.joints.size() > sizeof(joints_) / sizeof(joints_[0])) {
@@ -314,10 +318,10 @@ hardware_interface::CallbackReturn MotorHardware::on_init(const hardware_interfa
 
         size_t j;
 
-        if (joint.name == "left_wheel_joint"){
+        if (ends_with(joint.name, "left_wheel_joint")){
             j = 0;
             RCLCPP_INFO(logger, "Setting up left_wheel_joint...");
-        } else if (joint.name == "right_wheel_joint"){
+        } else if (ends_with(joint.name, "right_wheel_joint")){
             j = 1;
             RCLCPP_INFO(logger, "Setting up right_wheel_joint...");
 
