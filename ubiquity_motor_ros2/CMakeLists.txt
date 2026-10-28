@@ -120,24 +120,17 @@ target_include_directories(${PROJECT_NAME}
 
 # Link libraries with ubiquity_motor_ros2
 target_link_libraries(${PROJECT_NAME}
+  rclcpp::rclcpp
+  ${std_msgs_TARGETS}
+  ${sensor_msgs_TARGETS}
+  ${diagnostic_msgs_TARGETS}
+  ${hardware_interface_TARGETS}
+  ${ros2_control_TARGETS}
+  ${diagnostic_updater_TARGETS}
+  ${ubiquity_motor_ros2_msgs_TARGETS}
+  ${pluginlib_TARGETS}
   Boost::thread  # Link Boost thread library
   ur_serial      # Link the serial library
-)
-
-
-ament_target_dependencies(${PROJECT_NAME}
-  "rclcpp"
-  "std_msgs"
-  "sensor_msgs"
-  "diagnostic_msgs"
-  "hardware_interface"
-  "ros2_control"
-  "diagnostic_updater"
-  # "controller_manager"
-  # "rosidl_default_runtime"
-  "ubiquity_motor_ros2_msgs"
-  "pluginlib"
-  # "${PROJECT_NAME}"  # This adds a dependency on the generated messages in the same package
 )
 
 pluginlib_export_plugin_description_file(hardware_interface plugin_description.xml)
@@ -146,44 +139,6 @@ pluginlib_export_plugin_description_file(hardware_interface plugin_description.x
 install(TARGETS ${PROJECT_NAME}
   DESTINATION lib/${PROJECT_NAME}
 )
-
-
-# # Add executable
-# add_executable(motor_node 
-#   # src/motor_message.cc 
-#   # src/motor_serial.cc 
-#   # src/motor_hardware.cc
-#   src/motor_node.cc)
-
-# # Include directories for executable
-# target_include_directories(motor_node
-#   PUBLIC
-#     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-#     $<INSTALL_INTERFACE:include>
-#     ${CMAKE_CURRENT_SOURCE_DIR}/serial/include
-#     ${controller_manager_INCLUDE_DIRS}
-# )
-
-# ament_target_dependencies(motor_node
-#   "rclcpp"
-#   "std_msgs"
-#   "sensor_msgs"
-#   "hardware_interface"
-#   "ros2_control"
-#   "diagnostic_updater"
-#   "controller_manager"
-#   "ubiquity_motor_ros2_msgs"
-# )
-
-# target_link_libraries(motor_node Boost::thread ur_serial ${PROJECT_NAME})
-
-# # Export the pluginlib library
-
-
-# # Install targets
-# install(TARGETS motor_node
-#   DESTINATION lib/${PROJECT_NAME}
-# )
 
 # Install scripts
 install(PROGRAMS
@@ -200,14 +155,5 @@ install(DIRECTORY launch/
 install(DIRECTORY cfg/
   DESTINATION share/${PROJECT_NAME}/cfg
 )
-
-
-# # Test dependencies
-# if(BUILD_TESTING)
-#   find_package(ament_lint_auto REQUIRED)
-#   set(ament_cmake_copyright_FOUND TRUE)
-#   set(ament_cmake_cpplint_FOUND TRUE)
-#   ament_lint_auto_find_test_dependencies()
-# endif()
 
 ament_package()

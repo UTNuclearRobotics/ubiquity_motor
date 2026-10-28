@@ -174,7 +174,7 @@ MotorHardware::MotorHardware()
 // }
 
 
-hardware_interface::CallbackReturn MotorHardware::on_configure(const rclcpp_lifecycle::State & previous_state)
+hardware_interface::CallbackReturn MotorHardware::on_configure(const rclcpp_lifecycle::State &)
 {
     node = rclcpp::Node::make_shared("motor_node");
 
@@ -306,7 +306,8 @@ inline bool ends_with(std::string const & value, std::string const & ending)
     return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
-hardware_interface::CallbackReturn MotorHardware::on_init(const hardware_interface::HardwareInfo &info) {
+hardware_interface::CallbackReturn MotorHardware::on_init(const hardware_interface::HardwareComponentInterfaceParams &params) {
+    hardware_interface::HardwareInfo info = params.hardware_info;
     // Initialize joint names and other variables
     if (info.joints.size() > sizeof(joints_) / sizeof(joints_[0])) {
         RCLCPP_FATAL(logger, "More joints found in configuration than expected.");
@@ -373,7 +374,7 @@ std::vector<hardware_interface::CommandInterface> MotorHardware::export_command_
     return std::move(command_interfaces_);
 }
 
-hardware_interface::CallbackReturn MotorHardware::on_activate(const rclcpp_lifecycle::State& previous_state)
+hardware_interface::CallbackReturn MotorHardware::on_activate(const rclcpp_lifecycle::State&)
 {
     RCLCPP_INFO(logger, "MotorHardware on_activate");
 
@@ -468,7 +469,7 @@ hardware_interface::CallbackReturn MotorHardware::on_activate(const rclcpp_lifec
 //     return hardware_interface::return_type::OK;
 // }
 
-hardware_interface::return_type MotorHardware::read(const rclcpp::Time& current_time, const rclcpp::Duration& elapsed_loop_time) {
+hardware_interface::return_type MotorHardware::read(const rclcpp::Time&, const rclcpp::Duration&) {
 
     // current_time = node->get_clock()->now();
     // elapsed_loop_time = current_time - last_loop_time;
@@ -577,7 +578,7 @@ void MotorHardware::manageMotorControllerState() {
     }
 }
 
-void MotorHardware::setWheelVelocities(const rclcpp::Time& current_time, const rclcpp::Duration & elapsed_loop_time) {
+void MotorHardware::setWheelVelocities(const rclcpp::Time& current_time, const rclcpp::Duration &) {
     // Determine and set wheel velocities in rad/sec from hardware positions in rads
 
     rclcpp::Time converted_current_time(current_time.nanoseconds(), last_joint_time.get_clock_type());

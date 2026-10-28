@@ -151,7 +151,7 @@ public:
 
     virtual ~MotorHardware();
 
-    hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareInfo &info) override;
+    hardware_interface::CallbackReturn on_init(const hardware_interface::HardwareComponentInterfaceParams &params) override;
     std::vector<hardware_interface::StateInterface> export_state_interfaces() override;
     std::vector<hardware_interface::CommandInterface> export_command_interfaces() override;
     // hardware_interface::return_type start() override;
